@@ -1,0 +1,47 @@
+name: Deploy Backend to Render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Render via API
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          if [ -z "$SERVICE_ID" ]; then
+            echo "RENDER_SERVICE_ID is empty. Creating service via Blueprint..."
+            curl -s -X POST \
+              https://api.render.com/v1/services \
+              -H "accept: application/json" \
+              -H "authorization: Bearer $RENDER_API_KEY" \
+              -H "content-type: application/json" \
+              -d '{
+                "type": "web_service",
+                "name": "archiq-ai-api",
+                "ownerId": "",
+                "region": "oregon",
+                "env": "docker",
+                "branch": "main",
+                "repo": "https://github.com/${{ github.repository }}"
+              }'
+          else
+            echo "Triggering deploy for service $SERVICE_ID"
+            curl -s -X POST \
+              https://api.render.com/v1/services/$SERVICE_ID/deploys \
+              -H "accept: application/json" \
+              -H "authorization: Bearer $RENDER_API_KEY" \
+              -H "content-type: application/json" \
+              -d '{ "clearCache": "do_not_clear" }'
+          fi

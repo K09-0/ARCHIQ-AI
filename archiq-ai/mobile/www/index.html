@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ARCHIQ AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      color: #38bdf8;
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+    .header p { color: #94a3b8; font-size: 14px; }
+    .card {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #334155;
+    }
+    .card h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #f8fafc;
+    }
+    textarea, input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 15px;
+      resize: none;
+    }
+    textarea { min-height: 100px; }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 10px;
+      background: #0ea5e9;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:disabled { background: #334155; }
+    .result {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0f172a;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .status { color: #94a3b8; font-size: 13px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>ARCHIQ AI</h1>
+    <p>Нормативная база РК с искусственным интеллектом</p>
+  </div>
+
+  <div class="card">
+    <h2>Задать вопрос</h2>
+    <textarea id="question" placeholder="Например: Какие требования к сейсмостойкости в Алматы?"></textarea>
+    <button class="btn" id="askBtn" onclick="ask()">Спросить AI</button>
+    <div class="status" id="askStatus"></div>
+    <div class="result" id="askResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>Загрузить документ (OCR + Анализ)</h2>
+    <input type="file" id="docFile" accept="image/*,.pdf" />
+    <button class="btn" id="uploadBtn" onclick="upload()">Анализировать</button>
+    <div class="status" id="uploadStatus"></div>
+    <div class="result" id="uploadResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>Справочник нормативов</h2>
+    <input type="text" id="searchNorms" placeholder="Поиск по коду или названию..." oninput="searchNorms()" />
+    <div id="normsList" style="margin-top:10px;"></div>
+  </div>
+
+  <script>
+    const API_BASE = "https://archiq-ai-api.onrender.com"; // замените на свой URL после деплоя
+
+    async function ask() {
+      const q = document.getElementById('question').value;
+      if (!q) return alert('Введите вопрос');
+      const btn = document.getElementById('askBtn');
+      const status = document.getElementById('askStatus');
+      const result = document.getElementById('askResult');
+      btn.disabled = true;
+      status.textContent = 'Отправка...';
+      try {
+        const res = await fetch(`${API_BASE}/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, use_norms: true })
+        });
+        const data = await res.json();
+        result.style.display = 'block';
+        result.textContent = data.answer || 'Нет ответа';
+        if (data.sources && data.sources.length) {
+          result.textContent += '\n\nИсточники:\n' + data.sources.map(s => `• ${s.code} — ${s.title}`).join('\n');
+        }
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = 'Ошибка сети. Проверьте API_BASE в коде.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function upload() {
+      const fileInput = document.getElementById('docFile');
+      if (!fileInput.files.length) return alert('Выберите файл');
+      const btn = document.getElementById('uploadBtn');
+      const status = document.getElementById('uploadStatus');
+      const result = document.getElementById('uploadResult');
+      btn.disabled = true;
+      status.textContent = 'OCR + Анализ...';
+      try {
+        const form = new FormData();
+        form.append('file', fileInput.files[0]);
+        const res = await fetch(`${API_BASE}/analyze-document`, { method: 'POST', body: form });
+        const data = await res.json();
+        result.style.display = 'block';
+        result.textContent = `Распознанный текст:\n${data.text || '—'}\n\nАнализ:\n${data.analysis || '—'}`;
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = 'Ошибка сети. Проверьте API_BASE в коде.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function searchNorms() {
+      const q = document.getElementById('searchNorms').value;
+      const list = document.getElementById('normsList');
+      try {
+        const res = await fetch(`${API_BASE}/norms?search=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        list.innerHTML = data.map(n => `<div style="padding:8px 0;border-bottom:1px solid #334155;"><b>${n.code}</b><br><span style="color:#94a3b8">${n.title}</span></div>`).join('');
+      } catch (e) {
+        list.innerHTML = '<div style="color:#94a3b8">Ошибка загрузки</div>';
+      }
+    }
+
+    searchNorms();
+  </script>
+</body>
+</html>
