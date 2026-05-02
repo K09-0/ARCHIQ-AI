@@ -285,9 +285,68 @@ STYLES = {
 }
 
 # --- Routes ---
+from fastapi.responses import HTMLResponse
+
+LANDING_PAGE = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archiq AI — Строительные нормы РК</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+        .container { max-width: 700px; width: 100%; text-align: center; }
+        .logo { font-size: 3rem; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
+        .subtitle { font-size: 1.1rem; color: #94a3b8; margin-bottom: 2rem; }
+        .status { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); padding: 0.5rem 1rem; border-radius: 999px; margin-bottom: 2rem; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .endpoints { text-align: left; background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; }
+        .endpoints h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .ep { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #1e293b; align-items: baseline; }
+        .ep:last-child { border-bottom: none; }
+        .method { font-family: monospace; font-size: 0.85rem; font-weight: 700; min-width: 65px; padding: 0.2rem 0.5rem; border-radius: 4px; text-align: center; }
+        .get { background: rgba(56,189,248,0.15); color: #38bdf8; }
+        .post { background: rgba(168,85,247,0.15); color: #a855f7; }
+        .path { font-family: monospace; font-size: 0.9rem; color: #e2e8f0; }
+        .desc { color: #64748b; font-size: 0.85rem; margin-left: auto; }
+        .footer { margin-top: 2rem; color: #475569; font-size: 0.8rem; }
+        .footer a { color: #818cf8; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Archiq AI</div>
+        <div class="subtitle">AI-помощник по строительным нормам Республики Казахстан</div>
+        <div class="status"><span class="dot"></span> Сервис работает</div>
+        <div class="endpoints">
+            <h2>API Endpoints</h2>
+            <div class="ep"><span class="method get">GET</span><span class="path">/health</span><span class="desc">Статус сервера</span></div>
+            <div class="ep"><span class="method get">GET</span><span class="path">/norms?search=...</span><span class="desc">Поиск нормативов</span></div>
+            <div class="ep"><span class="method post">POST</span><span class="path">/ask</span><span class="desc">AI-ответ (Gemini)</span></div>
+            <div class="ep"><span class="method post">POST</span><span class="path">/ocr</span><span class="desc">Распознавание текста</span></div>
+            <div class="ep"><span class="method post">POST</span><span class="path">/analyze-document</span><span class="desc">OCR + AI анализ</span></div>
+            <div class="ep"><span class="method get">GET</span><span class="path">/documents</span><span class="desc">Список документов</span></div>
+            <div class="ep"><span class="method post">POST</span><span class="path">/generate-visualization</span><span class="desc">Генерация визуализации</span></div>
+            <div class="ep"><span class="method post">POST</span><span class="path">/generate-3d-view</span><span class="desc">3D визуализация</span></div>
+            <div class="ep"><span class="method get">GET</span><span class="path">/visualization-styles</span><span class="desc">Стили визуализации</span></div>
+            <div class="ep"><span class="method get">GET</span><span class="path">/visualizations</span><span class="desc">Список визуализаций</span></div>
+        </div>
+        <div class="footer">
+            <p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p>
+        </div>
+    </div>
+</body>
+</html>"""
+
 @app.on_event("startup")
 def on_startup():
     init_db()
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return LANDING_PAGE
 
 @app.get("/health")
 def health_check():
