@@ -19,14 +19,19 @@ SDXL_API_URL = os.getenv("SDXL_API_URL", "")
 DB_PATH = os.getenv("DB_PATH", "norms.db")
 
 # --- Gemini client wrapper ---
-import google.generativeai as genai
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+try:
+    import google.generativeai as genai
+    if GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
 
 def gemini_chat(prompt: str, system_instruction: Optional[str] = None) -> str:
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not GEMINI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="google-generativeai not installed")
     model = genai.GenerativeModel(
         model_name="gemini-1.5-flash",
         system_instruction=system_instruction
@@ -57,7 +62,7 @@ def hf_ocr(image_bytes: bytes) -> str:
 def generate_ai_image(prompt: str, style: str = "photorealistic", seed: Optional[int] = None) -> Dict[str, Any]:
     """Generate an image using available AI service (Gemini or Stable Diffusion)."""
     # Try using Gemini for image generation if available
-    if GEMINI_API_KEY:
+    if GEMINI_API_KEY and GEMINI_AVAILABLE:
         try:
             model = genai.GenerativeModel(
                 model_name="gemini-1.5-pro",
