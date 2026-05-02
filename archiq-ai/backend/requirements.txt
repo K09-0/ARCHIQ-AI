@@ -1,8 +1,5 @@
 fastapi
 uvicorn[standard]
 python-multipart
-google-generativeai==0.8.5
 requests
 pydantic
-pillow
-numpy
