@@ -1,4 +1,4 @@
-:"""Scale calibration for site plans."""
+"""Scale calibration for site plans."""
 
 import cv2
 import numpy as np
@@ -253,4 +253,4 @@ class ScaleCalibrator:
         Returns:
             List of pixel coordinates
         """
-        return [(x * scale_factor, y * scale_factor) for x, y in points]}
+        return [(x * scale_factor, y * scale_factor) for x, y in points]

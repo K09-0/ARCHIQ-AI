@@ -1,4 +1,4 @@
-:"""OCR processing for site plans."""
+"""OCR processing for site plans."""
 
 import pytesseract
 import cv2

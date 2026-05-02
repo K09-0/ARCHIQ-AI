@@ -301,4 +301,66 @@ def get_all_normatives() -> List[Normative]:
         _n("SNiP 3.02-2014 §7.1", "Освещенность помещений (жилое)", "BEZOPASNOST_TRUDA", "Освещение",
           "Нормативная освещенность жилых помещений общего пользования.",
           20, 50, "лк", "SNiP", 2014, ["освещенность", "жилое", "свет"]),
-        _n("SNiP 3.02-2014 §7.2", "Освещенность помещений (немного)")
+    ])
+
+    return norms
+
+
+def init_database(db_path=None):
+    """Initialize and populate the normative database."""
+    path = db_path or DB_PATH
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("""CREATE TABLE IF NOT EXISTS norms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        section TEXT NOT NULL,
+        content TEXT NOT NULL,
+        requirements TEXT NOT NULL,
+        min_value REAL,
+        max_value REAL,
+        unit TEXT,
+        reference_type TEXT,
+        year INTEGER,
+        tags TEXT DEFAULT '[]',
+        url TEXT
+    )""")
+    cursor = conn.execute('SELECT COUNT(*) FROM norms')
+    count = cursor.fetchone()[0]
+    if count == 0:
+        all_norms = get_all_normatives()
+        for norm in all_norms:
+            conn.execute(
+                'INSERT OR IGNORE INTO norms (code, title, category, section, content, requirements, min_value, max_value, unit, reference_type, year, tags, url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (norm.code, norm.title, norm.category, norm.section, norm.content, norm.requirements,
+                 norm.min_value, norm.max_value, norm.unit, norm.reference_type, norm.year,
+                 json.dumps(norm.tags), norm.url)
+            )
+        conn.commit()
+    return conn
+
+
+def search_norms(query, db_path=None):
+    """Search norms by keyword."""
+    conn = init_database(db_path)
+    cursor = conn.execute(
+        'SELECT * FROM norms WHERE title LIKE ? OR content LIKE ? OR requirements LIKE ? LIMIT 50',
+        (f'%{query}%', f'%{query}%', f'%{query}%')
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_norms_by_category(category, db_path=None):
+    """Get all norms for a category."""
+    conn = init_database(db_path)
+    cursor = conn.execute('SELECT * FROM norms WHERE category = ?', (category,))
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_all_categories(db_path=None):
+    """Get all unique categories."""
+    conn = init_database(db_path)
+    cursor = conn.execute('SELECT DISTINCT category FROM norms ORDER BY category')
+    return [row[0] for row in cursor.fetchall()]

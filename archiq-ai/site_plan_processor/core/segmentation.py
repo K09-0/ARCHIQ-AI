@@ -1,4 +1,4 @@
-:"""Object segmentation for site plans."""
+"""Object segmentation for site plans."""
 
 import cv2
 import numpy as np

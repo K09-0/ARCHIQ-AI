@@ -1,4 +1,4 @@
-:"""FastAPI routes for site plan processing."""
+"""FastAPI routes for site plan processing."""
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse

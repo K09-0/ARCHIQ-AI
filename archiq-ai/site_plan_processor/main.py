@@ -1,4 +1,4 @@
-:"""Main FastAPI application for site plan processing."""
+"""Main FastAPI application for site plan processing."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

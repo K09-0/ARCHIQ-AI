@@ -1,4 +1,4 @@
-:"""Vector export functionality (DXF, SVG)."""
+"""Vector export functionality (DXF, SVG)."""
 
 import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
