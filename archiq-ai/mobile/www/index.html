@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ARCHIQ AI</title>
+  <title>ARCHIQ AI - Генерация визуализаций</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -11,15 +11,16 @@
       background: #0f172a;
       color: #e2e8f0;
       min-height: 100vh;
-      padding: 20px;
+      padding: 16px;
     }
     .header {
       text-align: center;
       margin-bottom: 24px;
+      padding: 16px;
     }
     .header h1 {
       color: #38bdf8;
-      font-size: 28px;
+      font-size: 24px;
       margin-bottom: 6px;
     }
     .header p { color: #94a3b8; font-size: 14px; }
@@ -34,8 +35,19 @@
       font-size: 16px;
       margin-bottom: 12px;
       color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    textarea, input[type="file"] {
+    .card h2 .badge {
+      background: #38bdf8;
+      color: #0f172a;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    textarea, input[type="text"], input[type="file"], input[type="number"], select {
       width: 100%;
       padding: 12px;
       border-radius: 10px;
@@ -43,22 +55,34 @@
       background: #0f172a;
       color: #e2e8f0;
       font-size: 15px;
-      resize: none;
+      resize: vertical;
     }
-    textarea { min-height: 100px; }
+    textarea { min-height: 80px; }
+    select[multiple] { min-height: 100px; }
     .btn {
       width: 100%;
       padding: 14px;
       margin-top: 12px;
       border: none;
       border-radius: 10px;
-      background: #0ea5e9;
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
       color: #fff;
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    .btn:disabled { background: #334155; }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { 
+      background: #334155; 
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-secondary {
+      background: linear-gradient(135deg, #475569, #64748b);
+    }
     .result {
       margin-top: 12px;
       padding: 12px;
@@ -68,105 +92,760 @@
       line-height: 1.5;
       white-space: pre-wrap;
       display: none;
+      max-height: 300px;
+      overflow-y: auto;
     }
     .status { color: #94a3b8; font-size: 13px; margin-top: 8px; }
+    .loading { display: none; }
+    .loading.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #475569;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Gallery Styles */
+    .gallery-section {
+      margin-top: 20px;
+    }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .gallery-item {
+      position: relative;
+      aspect-ratio: 1;
+      background: #0f172a;
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .gallery-item:hover {
+      border-color: #38bdf8;
+      transform: scale(1.02);
+    }
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .gallery-item .placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 12px;
+      text-align: center;
+      padding: 8px;
+    }
+    .gallery-item .variant-label {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(15, 23, 42, 0.9);
+      color: #38bdf8;
+      padding: 4px;
+      font-size: 11px;
+      text-align: center;
+    }
+    .gallery-item.loading img { opacity: 0.3; }
+
+    /* Style tags */
+    .style-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .style-tag {
+      padding: 6px 12px;
+      background: #334155;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .style-tag:hover { border-color: #475569; }
+    .style-tag.active {
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+      color: #fff;
+      border-color: #0ea5e9;
+    }
+    .style-tag.style-arch {
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      color: #fff;
+    }
+    .style-tag.style-modern { background: #16a34a22; border-color: #16a34a; }
+    .style-tag.style-industrial { background: #dc262622; border-color: #dc2626; }
+
+    /* Preview Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+      max-width: 900px;
+      max-height: 90vh;
+      background: #1e293b;
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      background: #0f172a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 { color: #f8fafc; font-size: 16px; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .modal-close:hover { color: #fff; }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-image {
+      width: 100%;
+      max-height: 60vh;
+      object-fit: contain;
+      border-radius: 10px;
+      background: #0f172a;
+    }
+    .modal-info {
+      margin-top: 16px;
+      padding: 12px;
+      background: #0f172a;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .modal-info p { margin-bottom: 8px; }
+    .modal-info strong { color: #38bdf8; }
+
+    /* Download/Action buttons */
+    .modal-actions {
+      padding: 12px 20px;
+      background: #0f172a;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .modal-btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .modal-btn.primary {
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+      color: #fff;
+    }
+    .modal-btn.secondary {
+      background: #334155;
+      color: #e2e8f0;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: #0f172a;
+      padding: 4px;
+      border-radius: 12px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .tab:hover { color: #fff; }
+    .tab.active {
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+      color: #fff;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* History section */
+    .history-item {
+      padding: 12px;
+      background: #0f172a;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      border-left: 3px solid #38bdf8;
+    }
+    .history-item .date { color: #64748b; font-size: 12px; margin-bottom: 4px; }
+    .history-item .desc { color: #cbd5e1; font-size: 14px; }
+    .history-item .style-badges { margin-top: 8px; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .header h1 { font-size: 20px; }
+      .card { padding: 12px; }
+      .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #64748b;
+    }
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>ARCHIQ AI</h1>
-    <p>Нормативная база РК с искусственным интеллектом</p>
+    <h1>🏗️ Archiq AI</h1>
+    <p>AI-генерация визуализаций фасадов и интерьеров</p>
   </div>
 
-  <div class="card">
-    <h2>Задать вопрос</h2>
-    <textarea id="question" placeholder="Например: Какие требования к сейсмостойкости в Алматы?"></textarea>
-    <button class="btn" id="askBtn" onclick="ask()">Спросить AI</button>
-    <div class="status" id="askStatus"></div>
-    <div class="result" id="askResult"></div>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('generator')">Генерация</button>
+    <button class="tab" onclick="switchTab('3dview')">3D-рендер</button>
+    <button class="tab" onclick="switchTab('history')">История</button>
+    <button class="tab" onclick="switchTab('library')">Библиотека</button>
   </div>
 
-  <div class="card">
-    <h2>Загрузить документ (OCR + Анализ)</h2>
-    <input type="file" id="docFile" accept="image/*,.pdf" />
-    <button class="btn" id="uploadBtn" onclick="upload()">Анализировать</button>
-    <div class="status" id="uploadStatus"></div>
-    <div class="result" id="uploadResult"></div>
+  <!-- Generator Tab -->
+  <div class="tab-content active" id="tab-generator">
+    <div class="card">
+      <h2><span class="badge">1</span> Описание объекта</h2>
+      <textarea id="vizDescription" placeholder="Например: Современный 5-этажный жилой дом с панорамными окнами и террасой на крыше">Многоэтажный жилой дом с современным фасадом из стекла и бетона, панорамные окна, уютные балконы</textarea>
+    </div>
+
+    <div class="card">
+      <h2><span class="badge">2</span> Архитектурный стиль</h2>
+      <div class="style-tags" id="archStyleTags">
+        <span class="style-tag style-arch active" data-style="современный">Современный</span>
+        <span class="style-tag style-modern" data-style="минимализм">Минимализм</span>
+        <span class="style-tag style-modern" data-style="хай-тек">Хай-тек</span>
+        <span class="style-tag style-industrial" data-style="индустриал">Индустриал</span>
+        <span class="style-tag" data-style="неоклассика">Неоклассика</span>
+        <span class="style-tag" data-style="скандинавский">Скандинавский</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="badge">3</span> Стиль визуализации</h2>
+      <div class="style-tags" id="vizStyleTags">
+        <span class="style-tag active" data-viz="фотореализм">Фотореализм</span>
+        <span class="style-tag" data-viz="3d-визуализация">3D-визуализация</span>
+        <span class="style-tag" data-viz="архитектурный-рендер">Арх. рендер</span>
+        <span class="style-tag" data-viz="концепт-арт">Концепт-арт</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="badge">4</span> Параметры</h2>
+      
+      <label style="display:block; margin-bottom:8px; font-size:13px; color:#94a3b8;">Ракурс</label>
+      <select id="viewpoint">
+        <option value="фасад">Основной фасад</option>
+        <option value="северный фасад">Северный фасад</option>
+        <option value="южный фасад">Южный фасад</option>
+        <option value="восточный фасад">Восточный фасад</option>
+        <option value="западный фасад">Западный фасад</option>
+        <option value="панорама">Панорамный вид</option>
+        <option value="угол">Вид с угла</option>
+        <option value="интерьер">Интерьер</option>
+      </select>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+        <div>
+          <label style="display:block; margin-bottom:8px; font-size:13px; color:#94a3b8;">Время суток</label>
+          <select id="timeOfDay">
+            <option value="день">День</option>
+            <option value="закат">Закат</option>
+            <option value="ночь">Ночь</option>
+            <option value="рассвет">Рассвет</option>
+            <option value="сумерки">Сумерки</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; margin-bottom:8px; font-size:13px; color:#94a3b8;">Погода</label>
+          <select id="weather">
+            <option value="ясно">Ясно</option>
+            <option value="пасмурно">Пасмурно</option>
+            <option value="дождь">Дождь</option>
+            <option value="снег">Снег</option>
+            <option value="туман">Туман</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+        <div>
+          <label style="display:block; margin-bottom:8px; font-size:13px; color:#94a3b8;">Освещение</label>
+          <select id="lighting">
+            <option value="естественное">Естественное</option>
+            <option value="искусственное">Искусственное</option>
+            <option value="смешанное">Смешанное</option>
+            <option value="драматичное">Драматичное</option>
+            <option value="мягкое">Мягкое</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; margin-bottom:8px; font-size:13px; color:#94a3b8;">Количество вариантов</label>
+          <input type="number" id="numVariants" value="4" min="1" max="8" style="padding:10px;">
+        </div>
+      </div>
+
+      <label style="display:block; margin-top:12px; margin-bottom:8px; font-size:13px; color:#94a3b8;">Материальные отделки (через запятую)</label>
+      <input type="text" id="materials" value="стекло, бетон" placeholder="например: стекло, бетон, дерево, металл">
+    </div>
+
+    <button class="btn" id="generateBtn" onclick="generateVisualization()">
+      🎨 Сгенерировать визуализации
+    </button>
+    <div class="loading" id="generateLoading">
+      <div class="spinner"></div>
+      <span>Генерация визуализаций...</span>
+    </div>
+    <div class="result" id="generateResult"></div>
   </div>
 
-  <div class="card">
-    <h2>Справочник нормативов</h2>
-    <input type="text" id="searchNorms" placeholder="Поиск по коду или названию..." oninput="searchNorms()" />
-    <div id="normsList" style="margin-top:10px;"></div>
+  <!-- 3D View Tab -->
+  <div class="tab-content" id="tab-3dview">
+    <div class="card">
+      <h2><span class="badge">1</span> Данные чертежа</h2>
+      <textarea id="planData" placeholder="Введите описание или JSON-данные плана здания..." style="min-height:120px;"></textarea>
+      
+      <label style="display:block; margin-top:12px; margin-bottom:8px; font-size:13px; color:#94a3b8;">Требуемые ракурсы</label>
+      <input type="text" id="viewpoints3d" value="север, юг, восток, запад, изометрия" placeholder="через запятую">
+    </div>
+
+    <button class="btn btn-secondary" id="generate3DBtn" onclick="generate3DView()">
+      🏗️ Сгенерировать 3D-рендеры
+    </button>
+    <div class="loading" id="generate3DLoading">
+      <div class="spinner"></div>
+      <span>Генерация 3D-моделей...</span>
+    </div>
+    <div class="result" id="generate3DResult"></div>
+
+    <div class="gallery-section" id="3dGallerySection" style="display:none;">
+      <h2 style="margin-top:20px;">Результаты 3D-рендеров</h2>
+      <div class="gallery-grid" id="3dGallery"></div>
+    </div>
+  </div>
+
+  <!-- History Tab -->
+  <div class="tab-content" id="tab-history">
+    <div class="card">
+      <h2>История генераций</h2>
+      <div id="historyList">
+        <div class="loading" style="justify-content:center;">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library Tab -->
+  <div class="tab-content" id="tab-library">
+    <div class="card">
+      <h2>Доступные стили генерации</h2>
+      <div id="stylesList">
+        <div class="loading" style="justify-content:center;">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="modal-overlay" id="previewModal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modalTitle">Предпросмотр</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img class="modal-image" id="modalImage" src="" alt="">
+        <div class="modal-info" id="modalInfo"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="downloadImage()">💾 Скачать</button>
+        <button class="modal-btn secondary" onclick="copyPrompt()">📋 Копировать промпт</button>
+        <button class="modal-btn secondary" onclick="regenerate()">🔄 Пересгенерировать</button>
+      </div>
+    </div>
   </div>
 
   <script>
-    const API_BASE = "https://archiq-ai-api.onrender.com"; // замените на свой URL после деплоя
+    const API_BASE = "https://archiq-ai-api.onrender.com"; // Update after deployment
+    let currentGeneration = null;
+    let selectedArchStyle = 'современный';
+    let selectedVizStyle = 'фотореализм';
 
-    async function ask() {
-      const q = document.getElementById('question').value;
-      if (!q) return alert('Введите вопрос');
-      const btn = document.getElementById('askBtn');
-      const status = document.getElementById('askStatus');
-      const result = document.getElementById('askResult');
+    // Tab switching
+    window.switchTab = function(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+      
+      if (tabName === 'history') loadHistory();
+      if (tabName === 'library') loadStyles();
+    };
+
+    // Style tag selection
+    document.querySelectorAll('#archStyleTags .style-tag').forEach(tag => {
+      tag.addEventListener('click', function() {
+        document.querySelectorAll('#archStyleTags .style-tag').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        selectedArchStyle = this.dataset.style;
+      });
+    });
+
+    document.querySelectorAll('#vizStyleTags .style-tag').forEach(tag => {
+      tag.addEventListener('click', function() {
+        document.querySelectorAll('#vizStyleTags .style-tag').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        selectedVizStyle = this.dataset.viz;
+      });
+    });
+
+    // Generate visualization
+    async function generateVisualization() {
+      const btn = document.getElementById('generateBtn');
+      const loading = document.getElementById('generateLoading');
+      const result = document.getElementById('generateResult');
+      
       btn.disabled = true;
-      status.textContent = 'Отправка...';
+      loading.classList.add('active');
+      result.style.display = 'none';
+      
+      const materials = document.getElementById('materials').value
+        .split(',')
+        .map(m => m.trim())
+        .filter(m => m);
+      
+      const data = {
+        description: document.getElementById('vizDescription').value,
+        style: selectedVizStyle,
+        architectural_style: selectedArchStyle,
+        viewpoint: document.getElementById('viewpoint').value,
+        time_of_day: document.getElementById('timeOfDay').value,
+        weather: document.getElementById('weather').value,
+        lighting: document.getElementById('lighting').value,
+        materials: materials,
+        num_variants: parseInt(document.getElementById('numVariants').value) || 4,
+        region: 'Казахстан',
+        building_type: 'жилое'
+      };
+
       try {
-        const res = await fetch(`${API_BASE}/ask`, {
+        const res = await fetch(`${API_BASE}/generate-visualization`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q, use_norms: true })
+          body: JSON.stringify(data)
         });
-        const data = await res.json();
+        const response = await res.json();
+        currentGeneration = response;
+        
+        result.innerHTML = formatGenerationResponse(response);
         result.style.display = 'block';
-        result.textContent = data.answer || 'Нет ответа';
-        if (data.sources && data.sources.length) {
-          result.textContent += '\n\nИсточники:\n' + data.sources.map(s => `• ${s.code} — ${s.title}`).join('\n');
-        }
-        status.textContent = '';
       } catch (e) {
-        status.textContent = 'Ошибка сети. Проверьте API_BASE в коде.';
+        result.innerHTML = `Ошибка: ${e.message}<br>Убедитесь, что API настроен корректно.`;
+        result.style.display = 'block';
       } finally {
         btn.disabled = false;
+        loading.classList.remove('active');
       }
     }
 
-    async function upload() {
-      const fileInput = document.getElementById('docFile');
-      if (!fileInput.files.length) return alert('Выберите файл');
-      const btn = document.getElementById('uploadBtn');
-      const status = document.getElementById('uploadStatus');
-      const result = document.getElementById('uploadResult');
+    // Generate 3D view
+    async function generate3DView() {
+      const btn = document.getElementById('generate3DBtn');
+      const loading = document.getElementById('generate3DLoading');
+      const result = document.getElementById('generate3DResult');
+      const section = document.getElementById('3dGallerySection');
+      const gallery = document.getElementById('3dGallery');
+      
       btn.disabled = true;
-      status.textContent = 'OCR + Анализ...';
+      loading.classList.add('active');
+      result.style.display = 'none';
+      section.style.display = 'none';
+      
+      const viewpoints = document.getElementById('viewpoints3d').value
+        .split(',')
+        .map(v => v.trim())
+        .filter(v => v);
+      
+      const data = {
+        plan_data: document.getElementById('planData').value,
+        viewpoints: viewpoints
+      };
+
       try {
-        const form = new FormData();
-        form.append('file', fileInput.files[0]);
-        const res = await fetch(`${API_BASE}/analyze-document`, { method: 'POST', body: form });
-        const data = await res.json();
+        const res = await fetch(`${API_BASE}/generate-3d-view`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const response = await res.json();
+        
+        result.innerHTML = format3DResponse(response);
         result.style.display = 'block';
-        result.textContent = `Распознанный текст:\n${data.text || '—'}\n\nАнализ:\n${data.analysis || '—'}`;
-        status.textContent = '';
+        
+        // Display gallery
+        renderGallery(response.results || [], gallery);
+        section.style.display = 'block';
       } catch (e) {
-        status.textContent = 'Ошибка сети. Проверьте API_BASE в коде.';
+        result.innerHTML = `Ошибка: ${e.message}`;
+        result.style.display = 'block';
       } finally {
         btn.disabled = false;
+        loading.classList.remove('active');
       }
     }
 
-    async function searchNorms() {
-      const q = document.getElementById('searchNorms').value;
-      const list = document.getElementById('normsList');
+    function formatGenerationResponse(response) {
+      let html = `<p><strong>✅ Визуализации сгенерированы</strong></p>`;
+      html += `<p>ID: ${response.visualization_id || 'N/A'}</p>`;
+      html += `<p>Количество вариантов: ${response.num_variants}</p>`;
+      html += `<div style="margin-top:12px;"><strong>Варианты:</strong></div>`;
+      
+      const results = response.results || [];
+      renderGallery(results, document.createElement('div'));
+      
+      return html;
+    }
+
+    function format3DResponse(response) {
+      let html = `<p><strong>✅ 3D-рендеры сгенерированы</strong></p>`;
+      html += `<p>ID: ${response.visualization_id || 'N/A'}</p>`;
+      html += `<p>Ракурсов: ${response.viewpoints?.length || 0}</p>`;
+      return html;
+    }
+
+    function renderGallery(results, container) {
+      if (!container) return;
+      
+      container.innerHTML = '';
+      
+      results.forEach((result, index) => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.style.cursor = 'pointer';
+        item.onclick = () => openModal(result, index);
+        
+        if (result.image_url) {
+          item.innerHTML = `
+            <img src="${result.image_url}" alt="Variant ${index + 1}" onerror="this.style.display='none'">
+            <div class="variant-label">Вариант ${index + 1}</div>
+          `;
+        } else if (result.description) {
+          item.innerHTML = `
+            <div class="placeholder">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                <line x1="4" y1="22" x2="4" y2="15"></line>
+              </svg>
+              Описание<br>доступно
+            </div>
+            <div class="variant-label">Вар ${index + 1}</div>
+          `;
+        }
+        
+        container.appendChild(item);
+      });
+    }
+
+    // Load history
+    async function loadHistory() {
+      const list = document.getElementById('historyList');
+      
       try {
-        const res = await fetch(`${API_BASE}/norms?search=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        list.innerHTML = data.map(n => `<div style="padding:8px 0;border-bottom:1px solid #334155;"><b>${n.code}</b><br><span style="color:#94a3b8">${n.title}</span></div>`).join('');
+        const res = await fetch(`${API_BASE}/visualizations?limit=20`);
+        const items = await res.json();
+        
+        if (items.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>История пуста</p></div>';
+          return;
+        }
+        
+        list.innerHTML = items.map(item => `
+          <div class="history-item">
+            <div class="date">${item.created_at || 'Н/Д'}</div>
+            <div class="desc">${item.description || 'Без описания'}</div>
+            <div class="style-badges">
+              <span class="style-tag">${item.style || ''}</span>
+              <span class="style-tag">${item.architectural_style || ''}</span>
+            </div>
+          </div>
+        `).join('');
       } catch (e) {
-        list.innerHTML = '<div style="color:#94a3b8">Ошибка загрузки</div>';
+        list.innerHTML = `<div class="empty-state"><p>Ошибка загрузки: ${e.message}</p></div>`;
       }
     }
 
-    searchNorms();
+    // Load styles
+    async function loadStyles() {
+      const list = document.getElementById('stylesList');
+      
+      try {
+        const res = await fetch(`${API_BASE}/visualization-styles`);
+        const data = await res.json();
+        const styles = data.styles || [];
+        
+        if (styles.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>Стили не найдены</p></div>';
+          return;
+        }
+        
+        const groups = {};
+        styles.forEach(s => {
+          groups[s.category] = groups[s.category] || [];
+          groups[s.category].push(s);
+        });
+        
+        list.innerHTML = Object.entries(groups).map(([cat, groupStyles]) => `
+          <div style="margin-bottom:16px;">
+            <h3 style="font-size:14px; color:#94a3b8; margin-bottom:8px; text-transform:capitalize;">${cat}</h3>
+            <div class="style-tags">
+              ${groupStyles.map(s => `
+                <span class="style-tag">${s.name}</span>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        list.innerHTML = `<div class="empty-state"><p>Ошибка загрузки: ${e.message}</p></div>`;
+      }
+    }
+
+    // Modal functions
+    let currentModalData = null;
+
+    function openModal(data, index) {
+      currentModalData = { data, index };
+      const modal = document.getElementById('previewModal');
+      const title = document.getElementById('modalTitle');
+      const image = document.getElementById('modalImage');
+      const info = document.getElementById('modalInfo');
+      
+      title.textContent = `Вариант ${index + 1}`;
+      
+      if (data.image_url) {
+        image.src = data.image_url;
+        image.style.display = 'block';
+      } else {
+        image.style.display = 'none';
+      }
+      
+      info.innerHTML = `
+        <p><strong>Описание:</strong> ${data.prompt || data.description || '—'}</p>
+        <p><strong>Метод:</strong> ${data.method || '—'}</p>
+        <p><strong>Seed:</strong> ${data.seed || '—'}</p>
+        ${data.description ? `<p><strong>Описание:</strong> ${data.description}</p>` : ''}
+      `;
+      
+      modal.classList.add('active');
+    }
+
+    function closeModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('previewModal').classList.remove('active');
+    }
+
+    function downloadImage() {
+      if (!currentModalData) return;
+      const { data } = currentModalData;
+      
+      if (data.image_url) {
+        const a = document.createElement('a');
+        a.href = data.image_url;
+        a.download = `viz_variant_${data.variant_id || currentModalData.index + 1}.png`;
+        a.click();
+      } else if (data.description) {
+        const blob = new Blob([data.description], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `viz_description_variant_${data.variant_id || currentModalData.index + 1}.txt`;
+        a.click();
+      }
+    }
+
+    function copyPrompt() {
+      if (!currentModalData) return;
+      const text = currentModalData.data.prompt || currentModalData.data.description || '';
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => {
+          alert('Промпт скопирован в буфер!');
+        });
+      }
+    }
+
+    function regenerate() {
+      closeModal();
+      // Trigger regeneration of current variant
+      generateVisualization();
+    }
+
+    // Load styles on library tab open
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initial state
+    });
   </script>
 </body>
 </html>
