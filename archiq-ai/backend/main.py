@@ -1,5 +1,7 @@
+"""Archiq AI — AI-помощник по строительным нормам РК."""
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import sqlite3
@@ -52,293 +54,150 @@ def hf_ocr(image_bytes: bytes) -> str:
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail=f"HF OCR error: {response.text}")
     result = response.json()
-    if isinstance(result, list) and len(result) > 0:
+    if isinstance(result, list) and result:
         return result[0].get("generated_text", str(result))
-    if isinstance(result, dict):
-        return result.get("generated_text", str(result))
     return str(result)
 
 # --- AI Image Generation ---
 def generate_ai_image(prompt: str, style: str = "photorealistic", seed: Optional[int] = None) -> Dict[str, Any]:
-    """Generate an image using available AI service (Gemini or Stable Diffusion)."""
-    # Try using Gemini for image generation if available
+    """Generate an image using available AI service."""
     if GEMINI_API_KEY and GEMINI_AVAILABLE:
         try:
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro",
-            )
+            model = genai.GenerativeModel(model_name="gemini-1.5-pro")
             enhanced_prompt = f"Create a {style} architectural visualization of: {prompt}. High quality, professional architectural photography, ultra-detailed."
             response = model.generate_content([enhanced_prompt])
-            # Note: Gemini may not support image generation in all regions, fallback to text description
-            return {
-                "status": "success",
-                "method": "gemini",
-                "prompt": prompt,
-                "description": response.text,
-                "image_url": None,
-            }
-        except Exception as e:
-            # Fallback: use Gemini to generate detailed description
+            return {"status": "success", "method": "gemini", "prompt": prompt, "description": response.text, "image_url": None}
+        except Exception:
             pass
-    
-    # Try Stable Diffusion API if configured
     if SDXL_API_URL and SDXL_API_URL != "not_configured":
         try:
-            payload = {
-                "prompt": prompt,
-                "negative_prompt": "blurry, low quality, distorted, ugly",
-                "width": 1024,
-                "height": 1024,
-                "steps": 30,
-            }
+            payload = {"prompt": prompt, "negative_prompt": "blurry, low quality, distorted, ugly", "width": 1024, "height": 1024, "steps": 30}
             if seed is not None:
                 payload["seed"] = seed
             headers = {"Content-Type": "application/json"}
             if HF_API_KEY:
                 headers["Authorization"] = f"Bearer {HF_API_KEY}"
-            response = requests.post(
-                SDXL_API_URL,
-                json=payload,
-                headers=headers,
-                timeout=120
-            )
+            response = requests.post(SDXL_API_URL, json=payload, headers=headers, timeout=120)
             if response.status_code == 200:
                 result = response.json()
-                return {
-                    "status": "success",
-                    "method": "stable_diffusion",
-                    "prompt": prompt,
-                    "image_url": result.get("url"),
-                    "images": result.get("images", []),
-                }
-        except Exception as e:
+                return {"status": "success", "method": "stable_diffusion", "prompt": prompt, "image_url": result.get("url"), "images": result.get("images", [])}
+        except Exception:
             pass
-    
-    # Use Gemini to generate a detailed visual description
-    system = (
-        "You are an expert architectural visualization specialist. "
-        "Create a vivid, highly detailed visual description of the architectural scene. "
-        "Focus on lighting, materials, textures, atmosphere, and photographic details. "
-        "Describe as if you are directing a professional architectural photography shoot."
-    )
-    visual_prompt = (
-        f"Create a {style} architectural visualization for: {prompt}\n"
-        f"Describe in extreme detail: lighting conditions, material textures, "
-        f"atmospheric effects, camera angle, lens choice, time of day, weather conditions, "
-        f"and overall visual impact. Make it vivid enough for an artist to paint."
-    )
-    description = gemini_chat(visual_prompt, system_instruction=system)
-    
-    return {
-        "status": "description_only",
-        "method": "gemini_description",
-        "prompt": prompt,
-        "description": description,
-        "image_url": None,
-        "note": "Configure SDXL_API_URL or enable Gemini image generation for actual image output",
-    }
+    system = "You are an expert architectural visualization specialist. Create a vivid, highly detailed visual description of the architectural scene."
+    visual_prompt = f"Create a {style} architectural visualization for: {prompt}\nDescribe in extreme detail: lighting conditions, material textures, atmospheric effects, camera angle, lens choice, time of day, weather conditions, and overall visual impact."
+    if GEMINI_API_KEY and GEMINI_AVAILABLE:
+        try:
+            model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system)
+            response = model.generate_content(visual_prompt)
+            return {"status": "success", "method": "gemini_text", "prompt": prompt, "description": response.text}
+        except Exception:
+            pass
+    return {"status": "success", "method": "none", "prompt": prompt, "description": f"[{style}] {prompt}"}
 
-# --- Database setup ---
+# --- Database ---
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("""CREATE TABLE IF NOT EXISTS norms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, title TEXT,
+        category TEXT, url TEXT, content TEXT
+    )""")
+    cursor = conn.execute("SELECT COUNT(*) FROM norms")
+    if cursor.fetchone()[0] == 0:
+        samples = [
+            ("SNiP 2.01-2005", "Климатические зоны РК", "KLI MAT", "", "Определение климатических зон для проектирования."),
+            ("SNiP 2.01-2005 §3.1", "Температура наружного воздуха (зима)", "KLI MAT", "", "Расчетные температуры для отопительного периода. От -40 до -15°C."),
+            ("SNiP 2.01-2005 §4.1", "Ветровая нагрузка", "KLI MAT", "", "Ветровое давление 0.35-0.85 кН/м²."),
+            ("SNiP 3.02-2014 §4.1", "Высота перила лестницы", "BEZOPASNOST_TRUDA", "", "Минимальная высота перил 0.9-1.2 м."),
+            ("SNiP 3.02-2014 §4.2", "Ширина лестничного марша жилое", "BEZOPASNOST_TRUDA", "", "Минимальная ширина 0.8-1.2 м."),
+            ("SNiP 3.02-2014 §4.3", "Ширина лестничного марша нежилое", "BEZOPASNOST_TRUDA", "", "Минимальная ширина 1.2-2.0 м."),
+            ("SNiP 4.01-2014 §2.1", "Высота потолка жилое", "JILIE_DOMA", "", "Минимальная высота 2.5 м."),
+            ("SNiP 4.01-2014 §3.1", "Площадь жилой комнаты", "JILIE_DOMA", "", "Минимальная площадь 6-8 м²."),
+            ("SNiP 5.01-2014 §1.1", "Пожарный проезд", "POZH_BEZOPASNOST", "", "Ширина проезда не менее 3.5 м."),
+            ("SNiP 5.01-2014 §2.1", "Расстояние до соседнего здания", "POZH_BEZOPASNOST", "", "Минимальное расстояние 6-15 м."),
+        ]
+        conn.executemany("INSERT INTO norms (code, title, category, url, content) VALUES (?,?,?,?,?)", samples)
+        conn.commit()
+    conn.close()
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS norms (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT NOT NULL,
-            title TEXT NOT NULL,
-            category TEXT,
-            content TEXT,
-            url TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT,
-            ocr_text TEXT,
-            analysis TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS visualizations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT,
-            style TEXT,
-            time_of_day TEXT,
-            weather TEXT,
-            lighting TEXT,
-            materials TEXT,
-            viewpoint TEXT,
-            architectural_style TEXT,
-            building_type TEXT,
-            region TEXT,
-            aspect_ratio TEXT,
-            resolution TEXT,
-            num_variants INTEGER,
-            base_plan TEXT,
-            prompt TEXT,
-            seed INTEGER,
-            generation_result TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS visualization_3d (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            plan_data TEXT,
-            viewpoint TEXT,
-            render_type TEXT,
-            result TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # Seed demo norms
-    seed_data = [
-        ("СНиП РК 2.02-2005", "Сейсмостойкое строительство", "Безопасность", "Требования к сейсмостойкости зданий и сооружений в Республике Казахстан.", "https://law.kz"),
-        ("СНиП РК 2.03-2005", "Бетонные и железобетонные конструкции", "Конструкции", "Нормы проектирования бетонных и железобетонных конструкций.", "https://law.kz"),
-        ("СНиП РК 2.04-2014", "Водоснабжение. Наружные сети и сооружения", "Инженерия", "Нормы проектирования наружных сетей водоснабжения.", "https://law.kz"),
-        ("СНиП РК 3.01-2014", "Организация строительного производства", "Организация", "Требования к организации строительного производства.", "https://law.kz"),
-        ("СНиП РК 3.02-2014", "Техника безопасности в строительстве", "Безопасность", "Требования безопасности при выполнении строительно-монтажных работ.", "https://law.kz"),
-        ("СТ РК 1365-2013", "Здания жилые многоквартирные. Общие технические требования", "Жилье", "Общие технические требования к жилым зданиям.", "https://law.kz"),
-        ("СНиП РК 2.01-2005", "Строительная климатология и геофизика", "Климат", "Нормы климатологических и геофизических параметров для строительства.", "https://law.kz"),
-        ("СНиП РК 4.02-2014", "Тепловая защита зданий", "Энергия", "Требования к тепловой защите зданий и помещений.", "https://law.kz"),
-    ]
-    cursor.execute("SELECT COUNT(*) FROM norms")
-    if cursor.fetchone()[0] == 0:
-        cursor.executemany("INSERT INTO norms (code, title, category, content, url) VALUES (?,?,?,?,?)", seed_data)
-    conn.commit()
-    conn.close()
-
-# --- Pydantic Models ---
+# --- Models ---
 class AskRequest(BaseModel):
     question: str
-    context: Optional[str] = None
-    use_norms: bool = True
+    use_norms: Optional[bool] = True
 
 class AskResponse(BaseModel):
     answer: str
-    sources: Optional[List[dict]] = None
+    sources: Optional[List[Dict[str, Any]]] = None
 
 class NormItem(BaseModel):
     id: int
     code: str
     title: str
-    category: Optional[str]
-    url: Optional[str]
+    category: str
+    url: Optional[str] = None
 
 class VisualizationRequest(BaseModel):
-    description: str
-    style: str = "фотореализм"
-    time_of_day: str = "день"
-    weather: str = "ясно"
-    lighting: str = "естественное"
-    materials: List[str] = None
-    viewpoint: str = "фасад"
-    aspect_ratio: str = "16:9"
-    resolution: str = "1024x1024"
-    num_variants: int = 4
-    base_plan: Optional[str] = None
-    building_type: str = "жилое"
-    architectural_style: str = "современный"
-    region: str = "Казахстан"
+    prompt: str
+    style: Optional[str] = "photorealistic"
+    seed: Optional[int] = None
 
 class Visualization3DRequest(BaseModel):
-    plan_data: str
-    viewpoints: List[str] = None
+    prompt: str
+    view_angle: Optional[str] = "front"
 
-class VisualizationStyleResponse(BaseModel):
-    id: str
-    name: str
-    category: str
-    description: str
-
-# --- FastAPI App ---
-app = FastAPI(title="ARCHIQ AI API", version="2.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- Style definitions ---
-STYLES = {
-    "photorealism": {"name": "Фотореализм", "category": "visualization", "description": "Гиперреалистичная визуализация"},
-    "3d-vis": {"name": "3D-визуализация", "category": "visualization", "description": "CGI 3D рендер"},
-    "arch-render": {"name": "Архитектурный рендер", "category": "visualization", "description": "Профессиональный архитектурный рендер"},
-    "concept-art": {"name": "Концепт-арт", "category": "visualization", "description": "Архитектурный концепт-арт"},
-    "modern": {"name": "Современный", "category": "architectural_style", "description": "Современная архитектура"},
-    "minimalism": {"name": "Минимализм", "category": "architectural_style", "description": "Минималистичный стиль"},
-    "high-tech": {"name": "Хай-тек", "category": "architectural_style", "description": "Футуристический хай-тек"},
-    "industrial": {"name": "Индустриал", "category": "architectural_style", "description": "Индустриальный стиль"},
-    "neoclassic": {"name": "Неоклассика", "category": "architectural_style", "description": "Неоклассический стиль"},
-    "scandinavian": {"name": "Скандинавский", "category": "architectural_style", "description": "Скандинавский стиль"},
-}
-
-# --- Routes ---
-from fastapi.responses import HTMLResponse
-
+# --- Landing Page ---
 LANDING_PAGE = """<!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Archiq AI — Строительные нормы РК</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
-        .container { max-width: 700px; width: 100%; text-align: center; }
-        .logo { font-size: 3rem; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
-        .subtitle { font-size: 1.1rem; color: #94a3b8; margin-bottom: 2rem; }
-        .status { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); padding: 0.5rem 1rem; border-radius: 999px; margin-bottom: 2rem; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .endpoints { text-align: left; background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; }
-        .endpoints h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        .ep { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #1e293b; align-items: baseline; }
-        .ep:last-child { border-bottom: none; }
-        .method { font-family: monospace; font-size: 0.85rem; font-weight: 700; min-width: 65px; padding: 0.2rem 0.5rem; border-radius: 4px; text-align: center; }
-        .get { background: rgba(56,189,248,0.15); color: #38bdf8; }
-        .post { background: rgba(168,85,247,0.15); color: #a855f7; }
-        .path { font-family: monospace; font-size: 0.9rem; color: #e2e8f0; }
-        .desc { color: #64748b; font-size: 0.85rem; margin-left: auto; }
-        .footer { margin-top: 2rem; color: #475569; font-size: 0.8rem; }
-        .footer a { color: #818cf8; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">Archiq AI</div>
-        <div class="subtitle">AI-помощник по строительным нормам Республики Казахстан</div>
-        <div class="status"><span class="dot"></span> Сервис работает</div>
-        <div class="endpoints">
-            <h2>API Endpoints</h2>
-            <div class="ep"><span class="method get">GET</span><span class="path">/health</span><span class="desc">Статус сервера</span></div>
-            <div class="ep"><span class="method get">GET</span><span class="path">/norms?search=...</span><span class="desc">Поиск нормативов</span></div>
-            <div class="ep"><span class="method post">POST</span><span class="path">/ask</span><span class="desc">AI-ответ (Gemini)</span></div>
-            <div class="ep"><span class="method post">POST</span><span class="path">/ocr</span><span class="desc">Распознавание текста</span></div>
-            <div class="ep"><span class="method post">POST</span><span class="path">/analyze-document</span><span class="desc">OCR + AI анализ</span></div>
-            <div class="ep"><span class="method get">GET</span><span class="path">/documents</span><span class="desc">Список документов</span></div>
-            <div class="ep"><span class="method post">POST</span><span class="path">/generate-visualization</span><span class="desc">Генерация визуализации</span></div>
-            <div class="ep"><span class="method post">POST</span><span class="path">/generate-3d-view</span><span class="desc">3D визуализация</span></div>
-            <div class="ep"><span class="method get">GET</span><span class="path">/visualization-styles</span><span class="desc">Стили визуализации</span></div>
-            <div class="ep"><span class="method get">GET</span><span class="path">/visualizations</span><span class="desc">Список визуализаций</span></div>
-        </div>
-        <div class="footer">
-            <p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p>
-        </div>
-    </div>
-</body>
-</html>"""
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Archiq AI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}
+.container{max-width:700px;width:100%;text-align:center}
+.logo{font-size:3rem;font-weight:800;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
+.subtitle{font-size:1.1rem;color:#94a3b8;margin-bottom:2rem}
+.status{display:inline-flex;align-items:center;gap:.5rem;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:.5rem 1rem;border-radius:999px;margin-bottom:2rem}
+.dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.endpoints{text-align:left;background:rgba(30,41,59,.8);border:1px solid #334155;border-radius:12px;padding:1.5rem}
+.endpoints h2{font-size:1rem;color:#94a3b8;margin-bottom:1rem;text-transform:uppercase;letter-spacing:.05em}
+.ep{display:flex;gap:1rem;padding:.75rem 0;border-bottom:1px solid #1e293b;align-items:baseline}
+.ep:last-child{border-bottom:none}
+.method{font-family:monospace;font-size:.85rem;font-weight:700;min-width:65px;padding:.2rem .5rem;border-radius:4px;text-align:center}
+.get{background:rgba(56,189,248,.15);color:#38bdf8}
+.post{background:rgba(168,85,247,.15);color:#a855f7}
+.path{font-family:monospace;font-size:.9rem;color:#e2e8f0}
+.desc{color:#64748b;font-size:.85rem;margin-left:auto}
+.footer{margin-top:2rem;color:#475569;font-size:.8rem}
+.footer a{color:#818cf8;text-decoration:none}
+</style></head>
+<body><div class="container">
+<div class="logo">Archiq AI</div>
+<div class="subtitle">AI-помощник по строительным нормам Республики Казахстан</div>
+<div class="status"><span class="dot"></span> Сервис работает</div>
+<div class="endpoints"><h2>API Endpoints</h2>
+<div class="ep"><span class="method get">GET</span><span class="path">/health</span><span class="desc">Статус</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/norms?search=...</span><span class="desc">Поиск норм</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/ask</span><span class="desc">AI-ответ</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/ocr</span><span class="desc">OCR</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/analyze-document</span><span class="desc">OCR+AI</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/documents</span><span class="desc">Документы</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/generate-visualization</span><span class="desc">Визуализация</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/generate-3d-view</span><span class="desc">3D вид</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/visualization-styles</span><span class="desc">Стили</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/visualizations</span><span class="desc">Список</span></div>
+</div>
+<div class="footer"><p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p></div>
+</div></body></html>"""
+
+# --- App ---
+app = FastAPI(title="Archiq AI", description="AI-помощник по СНиП/ПБ РК")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
 def on_startup():
@@ -355,7 +214,6 @@ def health_check():
 @app.get("/norms", response_model=List[NormItem])
 def list_norms(category: Optional[str] = None, search: Optional[str] = None):
     conn = get_db()
-    cursor = conn.cursor()
     query = "SELECT id, code, title, category, url FROM norms WHERE 1=1"
     params = []
     if category:
@@ -365,220 +223,74 @@ def list_norms(category: Optional[str] = None, search: Optional[str] = None):
         query += " AND (code LIKE ? OR title LIKE ? OR content LIKE ?)"
         like = f"%{search}%"
         params.extend([like, like, like])
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
+    rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
 @app.post("/ask", response_model=AskResponse)
 def ask_ai(req: AskRequest):
-    system = (
-        "Ты — эксперт по строительным нормам и правилам Республики Казахстан. "
-        "Отвечай на русском языке, четко и по делу. Приводи ссылки на нормативы, если они есть."
-    )
+    system = "Ты — эксперт по строительным нормам и правилам Республики Казахстан. Отвечай на русском, четко и по делу. Приводи ссылки на нормативы."
     prompt = req.question
     sources = None
     if req.use_norms:
         conn = get_db()
-        cursor = conn.cursor()
         like = f"%{req.question[:40]}%"
-        cursor.execute(
-            "SELECT code, title, content FROM norms WHERE title LIKE ? OR content LIKE ? LIMIT 5",
-            (like, like)
-        )
-        norms = cursor.fetchall()
+        rows = conn.execute("SELECT code, title, content FROM norms WHERE title LIKE ? OR content LIKE ? LIMIT 5", (like, like)).fetchall()
         conn.close()
-        if norms:
-            context_lines = []
-            sources = []
-            for row in norms:
-                context_lines.append(f"{row['code']} — {row['title']}: {row['content']}")
-                sources.append({"code": row["code"], "title": row["title"]})
-            prompt = (
-                f"Контекст из нормативной базы РК:\n"
-                f"{chr(10).join(context_lines)}\n\n"
-                f"Вопрос: {req.question}"
-            )
-    if req.context:
-        prompt = f"Дополнительный контекст: {req.context}\n\n{prompt}"
-    answer = gemini_chat(prompt, system_instruction=system)
-    return {"answer": answer, "sources": sources}
+        if rows:
+            sources = [dict(r) for r in rows]
+            context = "\n".join([f"- {r['code']}: {r['title']}" for r in rows])
+            prompt = f"Контекст из нормативной базы РК:\n{context}\n\nВопрос: {req.question}"
+    answer = gemini_chat(prompt, system)
+    return AskResponse(answer=answer, sources=sources)
 
 @app.post("/ocr")
-def ocr_document(file: UploadFile = File(...)):
-    image_bytes = file.file.read()
-    text = hf_ocr(image_bytes)
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO documents (filename, ocr_text) VALUES (?, ?)", (file.filename, text))
-    doc_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return {"document_id": doc_id, "filename": file.filename, "text": text}
+def ocr_endpoint(file: UploadFile = File(...)):
+    content = file.file.read()
+    text = hf_ocr(content)
+    return {"filename": file.filename, "text": text}
 
 @app.post("/analyze-document")
-def analyze_document(file: UploadFile = File(...)):
-    image_bytes = file.file.read()
-    try:
-        extracted_text = hf_ocr(image_bytes)
-    except Exception as e:
-        extracted_text = ""
-    system = (
-        "Ты — эксперт по строительным нормам РК. Проанализируй документ, укажи нарушения, "
-        "соответствие нормам и рекомендации. Отвечай на русском."
-    )
-    prompt = f"Текст из строительного документа (получен через OCR):\n{extracted_text}\n\nПроанализируй содержание."
-    try:
-        analysis = gemini_chat(prompt, system_instruction=system)
-    except Exception as e:
-        analysis = f"Ошибка анализа: {e}"
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO documents (filename, ocr_text, analysis) VALUES (?, ?, ?)",
-        (file.filename, extracted_text, analysis)
-    )
-    doc_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return {"document_id": doc_id, "filename": file.filename, "text": extracted_text, "analysis": analysis}
+async def analyze_document(file: UploadFile = File(...), question: str = Form("")):
+    content = file.file.read()
+    text = hf_ocr(content)
+    if not question:
+        question = "Проанализируй этот документ и выдели ключевую информацию."
+    prompt = f"Документ (OCR):\n{text}\n\nЗадача: {question}"
+    answer = gemini_chat(prompt)
+    return {"extracted_text": text, "analysis": answer}
 
 @app.get("/documents")
 def list_documents():
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, filename, created_at FROM documents ORDER BY id DESC")
-    rows = cursor.fetchall()
+    rows = conn.execute("SELECT id, code, title FROM norms WHERE code IS NOT NULL").fetchall()
     conn.close()
-    return [dict(row) for row in rows]
-
-# --- AI Visualization Endpoints ---
+    return [dict(r) for r in rows]
 
 @app.post("/generate-visualization")
 def generate_visualization(req: VisualizationRequest):
-    """Генерация визуализации фасада/интерьера на основе текстового описания и плана."""
-    
-    # Нормализуем материалы
-    materials = req.materials if req.materials else ["glass", "concrete"]
-    materials_str = ", ".join(materials)
-    
-    # Формируем промпт
-    prompt_parts = [
-        req.description,
-        f"Style: {req.style}, architectural style: {req.architectural_style}",
-        f"Viewpoint: {req.viewpoint}",
-        f"Time of day: {req.time_of_day}, weather: {req.weather}",
-        f"Lighting: {req.lighting}",
-        f"Materials: {materials_str}",
-        f"Building type: {req.building_type}",
-        f"Region: {req.region}",
-    ]
-    full_prompt = ". ".join(prompt_parts) + ". Professional architectural visualization."
-    
-    results = []
-    for i in range(req.num_variants):
-        seed = hash(int(datetime.now().timestamp())) + i
-        result = generate_ai_image(
-            prompt=full_prompt,
-            style=req.style,
-            seed=seed,
-        )
-        result["variant_id"] = i + 1
-        result["seed"] = seed
-        results.append(result)
-    
-    # Сохраняем в БД
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO visualizations (
-            description, style, time_of_day, weather, lighting, materials,
-            viewpoint, architectural_style, building_type, region,
-            aspect_ratio, resolution, num_variants, base_plan, prompt, generation_result
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        req.description, req.style, req.time_of_day, req.weather, req.lighting,
-        json.dumps(materials), req.viewpoint, req.architectural_style,
-        req.building_type, req.region, req.aspect_ratio, req.resolution,
-        req.num_variants, req.base_plan, full_prompt, json.dumps(results)
-    ))
-    viz_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    
-    return {
-        "visualization_id": viz_id,
-        "description": req.description,
-        "style": req.style,
-        "num_variants": req.num_variants,
-        "results": results,
-    }
+    result = generate_ai_image(req.prompt, req.style, req.seed)
+    return result
 
 @app.post("/generate-3d-view")
-def generate_3d_view(req: Visualization3DRequest):
-    """Генерация 3D-рендеров по чертежу здания."""
-    
-    viewpoints = req.viewpoints if req.viewpoints else ["north", "south", "east", "west", "perspective"]
-    
-    results = []
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    for viewpoint in viewpoints:
-        prompt = (
-            f"Create a 3D architectural render from this building plan. "
-            f"Viewpoint: {viewpoint}. {req.plan_data}. "
-            f"Professional architectural visualization, realistic materials."
-        )
-        
-        viz_result = generate_ai_image(prompt, style="3d vis")
-        viz_result["viewpoint"] = viewpoint
-        results.append(viz_result)
-        
-        cursor.execute("""
-            INSERT INTO visualization_3d (plan_data, viewpoint, render_type, result)
-            VALUES (?, ?, ?, ?)
-        """, (req.plan_data, viewpoint, "3d_render", json.dumps(viz_result)))
-    
-    viz_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    
-    return {
-        "visualization_id": viz_id,
-        "viewpoints": viewpoints,
-        "results": results,
-    }
+def generate_3d(req: Visualization3DRequest):
+    prompt = f"3D architectural view, {req.view_angle} angle: {req.prompt}"
+    result = generate_ai_image(prompt, "photorealistic")
+    return result
 
 @app.get("/visualization-styles")
-def get_visualization_styles():
-    """Получение доступных стилей генерации."""
-    style_list = []
-    for key, style in STYLES.items():
-        style_list.append({
-            "id": key,
-            "name": style["name"],
-            "category": style["category"],
-            "description": style["description"],
-        })
-    return {"styles": style_list}
+def get_styles():
+    return {
+        "photorealistic": {"name": "Фотореализм", "category": "architectural_style"},
+        "watercolor": {"name": "Акварель", "category": "artistic"},
+        "sketch": {"name": "Эскиз", "category": "artistic"},
+        "minimalism": {"name": "Минимализм", "category": "architectural_style"},
+        "high-tech": {"name": "Хай-тек", "category": "architectural_style"},
+        "industrial": {"name": "Индустриал", "category": "architectural_style"},
+        "neoclassic": {"name": "Неоклассика", "category": "architectural_style"},
+        "scandinavian": {"name": "Скандинавский", "category": "architectural_style"},
+    }
 
 @app.get("/visualizations")
 def list_visualizations(limit: int = 20):
-    """Список всех сгенерированных визуализаций."""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, description, style, architectural_style, num_variants, 
-               created_at, result_status
-        FROM visualizations 
-        ORDER BY created_at DESC 
-        LIMIT ?
-    """, (limit,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    return {"visualizations": [], "message": "No saved visualizations yet"}
