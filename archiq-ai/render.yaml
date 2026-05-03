@@ -5,7 +5,9 @@ services:
     runtime: docker
     repo: https://github.com/K09-0/ARCHIQ-AI
     branch: main
-    dockerfilePath: backend/Dockerfile
+    rootDir: backend
+    dockerContext: .
+    dockerfilePath: Dockerfile
     envVars:
       - key: GEMINI_API_KEY
         sync: false

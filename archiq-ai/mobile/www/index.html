@@ -5,115 +5,305 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Archiq AI</title>
+    <title>Archiq AI — Генератор планов</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding-bottom: 70px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        
+        /* Header */
         .header { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 16px; text-align: center; border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 100; }
-        .header h1 { font-size: 22px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header h1 { font-size: 20px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header p { color: #64748b; font-size: 12px; margin-top: 2px; }
-        .tabs { display: flex; background: #1e293b; border-bottom: 1px solid #334155; position: sticky; top: 60px; z-index: 99; overflow-x: auto; }
-        .tab { flex: 1; min-width: 80px; padding: 12px 8px; text-align: center; font-size: 13px; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
-        .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
-        .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
-        .content { padding: 16px; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        
+        /* Steps indicator */
+        .steps { display: flex; background: #1e293b; border-bottom: 1px solid #334155; overflow-x: auto; }
+        .step { flex: 1; min-width: 80px; padding: 10px 8px; text-align: center; font-size: 12px; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
+        .step.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+        .step.done { color: #22c55e; }
+        .step-num { font-size: 16px; display: block; margin-bottom: 2px; }
+        
+        /* Content */
+        .content { padding: 16px; padding-bottom: 80px; }
+        .step-content { display: none; }
+        .step-content.active { display: block; }
+        
+        /* Cards */
         .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #334155; }
-        .card h3 { font-size: 15px; color: #f8fafc; margin-bottom: 10px; }
-        input[type="text"], textarea, select { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 14px; margin-bottom: 10px; }
-        textarea { min-height: 100px; resize: vertical; }
+        .card h3 { font-size: 15px; color: #f8fafc; margin-bottom: 12px; }
+        
+        /* Form elements */
+        label { display: block; color: #94a3b8; font-size: 13px; margin-bottom: 4px; margin-top: 10px; }
+        label:first-child { margin-top: 0; }
+        input[type="text"], input[type="number"], select, textarea { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 14px; }
+        textarea { min-height: 80px; resize: vertical; }
+        input[type="file"] { width: 100%; padding: 10px; background: #0f172a; border: 1px dashed #334155; border-radius: 8px; color: #94a3b8; }
         input:focus, textarea:focus, select:focus { outline: none; border-color: #38bdf8; }
-        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
-        .btn-primary { background: linear-gradient(135deg, #38bdf8, #818cf8); color: #0f172a; }
+        
+        /* Row layout */
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        
+        /* Buttons */
+        .btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: linear-gradient(135deg, #38bdf8, #818cf8); color: #0f172a; margin-top: 16px; }
         .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
+        .btn-secondary { background: #334155; color: #e2e8f0; margin-top: 8px; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .result { background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border-left: 3px solid #38bdf8; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.6; }
-        .result img { max-width: 100%; border-radius: 8px; margin-top: 8px; }
-        .norm-item { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #818cf8; }
-        .norm-item strong { color: #38bdf8; font-size: 13px; }
-        .norm-item p { color: #94a3b8; font-size: 13px; margin-top: 4px; }
-        .loading { text-align: center; padding: 20px; color: #64748b; }
-        .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        
+        /* Plans display */
+        .plans-container { display: flex; flex-direction: column; gap: 16px; }
+        .plan-card { background: #1e293b; border-radius: 12px; overflow: hidden; border: 1px solid #334155; }
+        .plan-card h3 { padding: 12px 16px; font-size: 14px; color: #38bdf8; border-bottom: 1px solid #334155; }
+        .plan-card svg { width: 100%; height: auto; background: #0f172a; }
+        
+        /* Specs */
+        .specs-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .spec-item { background: #0f172a; border-radius: 8px; padding: 12px; }
+        .spec-item .label { color: #64748b; font-size: 11px; }
+        .spec-item .value { color: #e2e8f0; font-size: 16px; font-weight: 600; margin-top: 2px; }
+        
+        /* Loading */
+        .loading { text-align: center; padding: 40px 20px; }
+        .spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .status-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-        .status-item { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
-        .status-ok { background: rgba(34,197,94,0.1); color: #22c55e; }
-        .status-off { background: rgba(239,68,68,0.1); color: #ef4444; }
-        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200; }
+        .loading p { color: #64748b; margin-top: 12px; }
+        
+        /* Error */
+        .error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px; color: #ef4444; margin-top: 12px; }
+        
+        /* Toast */
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200; }
         .toast.show { opacity: 1; }
+        
+        /* Compliance list */
+        .compliance { margin-top: 12px; }
+        .compliance li { color: #22c55e; font-size: 13px; padding: 4px 0; padding-left: 8px; border-left: 2px solid #22c55e; margin-bottom: 6px; }
+        
+        /* Project history */
+        .project-item { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .project-item .name { font-weight: 600; color: #e2e8f0; }
+        .project-item .meta { color: #64748b; font-size: 12px; }
+        .project-item button { background: #38bdf8; color: #0f172a; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🏗️ Archiq AI</h1>
-        <p>Строительные нормы РК</p>
+        <p>Генератор архитектурных планов</p>
     </div>
-    <div class="tabs">
-        <div class="tab active" data-tab="ask"><span class="tab-icon">💬</span>Вопрос</div>
-        <div class="tab" data-tab="norms"><span class="tab-icon">📚</span>Нормы</div>
-        <div class="tab" data-tab="ocr"><span class="tab-icon">📷</span>OCR</div>
-        <div class="tab" data-tab="viz"><span class="tab-icon">🎨</span>Визуал</div>
+    
+    <div class="steps">
+        <div class="step active" data-step="1"><span class="step-num">1</span>Проект</div>
+        <div class="step" data-step="2"><span class="step-num">2</span>Участок</div>
+        <div class="step" data-step="3"><span class="step-num">3</span>Результат</div>
     </div>
+    
     <div class="content">
-        <div id="status-bar" class="status-bar"></div>
-        <div class="tab-content active" id="tab-ask">
+        <!-- STEP 1: Project parameters -->
+        <div class="step-content active" id="step-1">
             <div class="card">
-                <h3>💬 Задай вопрос по СНиП</h3>
-                <textarea id="ask-input" placeholder="Например: Какая минимальная ширина лестницы в жилом доме?"></textarea>
-                <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#94a3b8;">
-                    <input type="checkbox" id="ask-norms" checked> Искать в базе норм
-                </label>
-                <button class="btn btn-primary" id="ask-btn" onclick="askAI()">Спросить</button>
-                <div id="ask-result"></div>
-            </div>
-        </div>
-        <div class="tab-content" id="tab-norms">
-            <div class="card">
-                <h3>📚 Поиск нормативов</h3>
-                <input type="text" id="norms-search" placeholder="Поиск: лестница, пожар, фундамент...">
-                <button class="btn btn-primary" onclick="searchNorms()">Найти</button>
-            </div>
-            <div id="norms-list"></div>
-        </div>
-        <div class="tab-content" id="tab-ocr">
-            <div class="card">
-                <h3>📷 Распознавание текста</h3>
-                <input type="file" id="ocr-file" accept="image/*" style="margin-bottom:10px;">
-                <button class="btn btn-primary" onclick="doOCR()">Распознать</button>
-                <div id="ocr-result"></div>
-            </div>
-        </div>
-        <div class="tab-content" id="tab-viz">
-            <div class="card">
-                <h3>🎨 Генерация визуализации</h3>
-                <input type="text" id="viz-prompt" placeholder="Опишите: двухэтажный дом в стиле минимализм с панорамными окнами">
-                <select id="viz-style">
-                    <option value="photorealistic">Фотореализм</option>
-                    <option value="watercolor">Акварель</option>
-                    <option value="sketch">Эскиз</option>
-                    <option value="minimalism">Минимализм</option>
-                    <option value="high-tech">Хай-тек</option>
-                    <option value="industrial">Индустриал</option>
-                    <option value="neoclassic">Неоклассика</option>
-                    <option value="scandinavian">Скандинавский</option>
+                <h3>📐 Параметры проекта</h3>
+                <label>Название проекта</label>
+                <input type="text" id="proj-name" value="Мой дом" placeholder="Название">
+                
+                <label>Тип здания</label>
+                <select id="proj-type">
+                    <option value="жилой дом">Жилой дом</option>
+                    <option value="дача">Дача</option>
+                    <option value="гараж">Гараж</option>
+                    <option value="баня">Баня</option>
+                    <option value="магазин">Магазин</option>
+                    <option value="офис">Офис</option>
+                    <option value="склад">Склад</option>
                 </select>
-                <button class="btn btn-primary" onclick="generateViz()">Сгенерировать</button>
-                <div id="viz-result"></div>
+                
+                <div class="row">
+                    <div>
+                        <label>Площадь, м²</label>
+                        <input type="number" id="proj-area" value="100" min="20" max="500">
+                    </div>
+                    <div>
+                        <label>Этажей</label>
+                        <select id="proj-floors">
+                            <option value="1">1 этаж</option>
+                            <option value="2">2 этажа</option>
+                            <option value="3">3 этажа</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <label>Количество комнат</label>
+                <input type="number" id="proj-rooms" value="3" min="1" max="10">
+                
+                <label>Дополнительные требования</label>
+                <textarea id="proj-req" placeholder="Например: большая гостиная, два санузла, гараж на 2 машины, терраса..."></textarea>
+                
+                <button class="btn btn-primary" onclick="goStep(2)">Далее →</button>
             </div>
+        </div>
+        
+        <!-- STEP 2: Site plan -->
+        <div class="step-content" id="step-2">
+            <div class="card">
+                <h3>📍 План участка</h3>
+                <div class="row">
+                    <div>
+                        <label>Ширина участка, м</label>
+                        <input type="number" id="site-w" value="20" min="5" max="100">
+                    </div>
+                    <div>
+                        <label>Глубина участка, м</label>
+                        <input type="number" id="site-d" value="30" min="5" max="100">
+                    </div>
+                </div>
+                
+                <label style="margin-top:16px">Или загрузите план участка (фото/скан)</label>
+                <input type="file" id="site-file" accept="image/*">
+                <p style="color:#64748b;font-size:11px;margin-top:6px;">AI проанализирует план и извлечёт размеры</p>
+                
+                <button class="btn btn-primary" id="generate-btn" onclick="generate()">🏗️ Сгенерировать план</button>
+                <div id="site-error"></div>
+            </div>
+            
+            <div id="site-analysis-result"></div>
+        </div>
+        
+        <!-- STEP 3: Results -->
+        <div class="step-content" id="step-3">
+            <div id="loading-view" class="loading" style="display:none;">
+                <div class="spinner"></div>
+                <p>Генерирую архитектурный план...</p>
+                <p style="font-size:12px;color:#475569;">Это может занять до минуты</p>
+            </div>
+            
+            <div id="result-view" style="display:none;">
+                <div class="card">
+                    <h3>📋 Спецификация проекта</h3>
+                    <div class="specs-grid" id="specs-grid"></div>
+                    <div class="compliance" id="compliance-list"></div>
+                    <p id="proj-desc" style="color:#94a3b8;font-size:13px;margin-top:12px;"></p>
+                </div>
+                
+                <div class="plans-container">
+                    <div class="plan-card">
+                        <h3>📍 План участка</h3>
+                        <div id="site-plan-view"></div>
+                    </div>
+                    <div class="plan-card">
+                        <h3>📐 Поэтажный план</h3>
+                        <div id="floor-plan-view"></div>
+                    </div>
+                </div>
+                
+                <button class="btn btn-secondary" onclick="goStep(1)">← Новый проект</button>
+            </div>
+            
+            <div id="error-view" class="error" style="display:none;"></div>
         </div>
     </div>
+    
     <div class="toast" id="toast"></div>
+    
     <script>
         const API = "https://archiq-ai-api.onrender.com";
-        function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
-        function loading(id, show) { document.getElementById(id).innerHTML = show ? '<div class="loading"><div class="spinner"></div><br>Загрузка...</div>' : ''; }
-        document.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => { document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active')); tab.classList.add('active'); document.getElementById('tab-' + tab.dataset.tab).classList.add('active'); }); });
-        fetch(API + '/health').then(r => r.json()).then(d => { const bar = document.getElementById('status-bar'); bar.innerHTML = '<span class="status-item status-ok">✅ Сервер</span>' + (d.gemini_configured ? '<span class="status-item status-ok">✅ Gemini</span>' : '<span class="status-item status-off">⬜ Gemini</span>') + (d.hf_configured ? '<span class="status-item status-ok">✅ OCR</span>' : '<span class="status-item status-off">⬜ OCR</span>'); });
-        async function askAI() { const q = document.getElementById('ask-input').value.trim(); if (!q) return toast('Введите вопрос'); const useNorms = document.getElementById('ask-norms').checked; loading('ask-result', true); document.getElementById('ask-btn').disabled = true; try { const res = await fetch(API + '/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, use_norms: useNorms }) }); const data = await res.json(); document.getElementById('ask-result').innerHTML = '<div class="result">' + (data.answer || JSON.stringify(data)) + '</div>'; } catch(e) { document.getElementById('ask-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } document.getElementById('ask-btn').disabled = false; }
-        async function searchNorms() { const q = document.getElementById('norms-search').value.trim(); loading('norms-list', true); try { const url = API + '/norms' + (q ? '?search=' + encodeURIComponent(q) : ''); const res = await fetch(url); const data = await res.json(); if (!data.length) { document.getElementById('norms-list').innerHTML = '<div class="card" style="text-align:center;color:#64748b;">Ничего не найдено</div>'; return; } document.getElementById('norms-list').innerHTML = data.map(n => '<div class="norm-item"><strong>' + (n.code || '') + '</strong><p>' + (n.title || '') + '</p></div>').join(''); } catch(e) { document.getElementById('norms-list').innerHTML = '<div class="card" style="color:#ef4444;">❌ ' + e.message + '</div>'; } }
-        async function doOCR() { const file = document.getElementById('ocr-file').files[0]; if (!file) return toast('Выберите файл'); loading('ocr-result', true); try { const formData = new FormData(); formData.append('file', file); const res = await fetch(API + '/ocr', { method: 'POST', body: formData }); const data = await res.json(); document.getElementById('ocr-result').innerHTML = '<div class="result">' + (data.text || JSON.stringify(data)) + '</div>'; } catch(e) { document.getElementById('ocr-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } }
-        async function generateViz() { const prompt = document.getElementById('viz-prompt').value.trim(); if (!prompt) return toast('Опишите что сгенерировать'); const style = document.getElementById('viz-style').value; loading('viz-result', true); try { const res = await fetch(API + '/generate-visualization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, style }) }); const data = await res.json(); let html = '<div class="result">'; if (data.image_url) html += '<img src="' + data.image_url + '">'; if (data.description) html += '<p>' + data.description + '</p>'; html += '<p style="color:#64748b;font-size:12px;margin-top:8px;">Метод: ' + (data.method || '?') + '</p></div>'; document.getElementById('viz-result').innerHTML = html; } catch(e) { document.getElementById('viz-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } }
+        let currentProjectId = null;
+        
+        function toast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+        
+        function goStep(n) {
+            document.querySelectorAll('.step').forEach(s => {
+                const sn = parseInt(s.dataset.step);
+                s.classList.remove('active', 'done');
+                if (sn < n) s.classList.add('done');
+                if (sn === n) s.classList.add('active');
+            });
+            document.querySelectorAll('.step-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('step-' + n).classList.add('active');
+        }
+        
+        async function generate() {
+            const btn = document.getElementById('generate-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Генерация...';
+            
+            goStep(3);
+            document.getElementById('loading-view').style.display = 'block';
+            document.getElementById('result-view').style.display = 'none';
+            document.getElementById('error-view').style.display = 'none';
+            
+            const fd = new FormData();
+            fd.append('name', document.getElementById('proj-name').value);
+            fd.append('building_type', document.getElementById('proj-type').value);
+            fd.append('area', document.getElementById('proj-area').value);
+            fd.append('floors', document.getElementById('proj-floors').value);
+            fd.append('rooms', document.getElementById('proj-rooms').value);
+            fd.append('site_width', document.getElementById('site-w').value);
+            fd.append('site_depth', document.getElementById('site-d').value);
+            fd.append('requirements', document.getElementById('proj-req').value);
+            
+            const file = document.getElementById('site-file').files[0];
+            if (file) fd.append('site_plan', file);
+            
+            try {
+                const res = await fetch(API + '/generate-plan', { method: 'POST', body: fd });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || JSON.stringify(err));
+                }
+                
+                const data = await res.json();
+                currentProjectId = data.project_id;
+                
+                // Load specs
+                const specs = data.specs;
+                document.getElementById('specs-grid').innerHTML = `
+                    <div class="spec-item"><div class="label">Общая площадь</div><div class="value">${specs.total_area} м²</div></div>
+                    <div class="spec-item"><div class="label">Жилая площадь</div><div class="value">${specs.living_area} м²</div></div>
+                    <div class="spec-item"><div class="label">Этажей</div><div class="value">${specs.floors}</div></div>
+                    <div class="spec-item"><div class="label">Комнат</div><div class="value">${specs.rooms_count}</div></div>
+                    <div class="spec-item"><div class="label">Размеры здания</div><div class="value">${specs.building_dimensions}</div></div>
+                    <div class="spec-item"><div class="label">Размеры участка</div><div class="value">${specs.site_dimensions}</div></div>
+                    <div class="spec-item"><div class="label">Площадь застройки</div><div class="value">${specs.building_footprint} м²</div></div>
+                    <div class="spec-item"><div class="label">Коэф. застройки</div><div class="value">${specs.site_coverage}%</div></div>
+                `;
+                
+                document.getElementById('proj-desc').textContent = specs.description;
+                
+                // Compliance
+                const compliance = specs.compliance || [];
+                document.getElementById('compliance-list').innerHTML = compliance.length ? 
+                    '<h4 style="color:#22c55e;margin-bottom:8px;">✅ Соответствие СНиП:</h4>' + 
+                    compliance.map(c => '<li>' + c + '</li>').join('') : '';
+                
+                // Load SVGs
+                const siteRes = await fetch(API + '/site-plan-svg?project_id=' + data.project_id);
+                document.getElementById('site-plan-view').innerHTML = await siteRes.text();
+                
+                const floorRes = await fetch(API + '/floor-plan-svg?project_id=' + data.project_id);
+                document.getElementById('floor-plan-view').innerHTML = await floorRes.text();
+                
+                document.getElementById('loading-view').style.display = 'none';
+                document.getElementById('result-view').style.display = 'block';
+                toast('✅ План сгенерирован!');
+                
+            } catch (e) {
+                document.getElementById('loading-view').style.display = 'none';
+                document.getElementById('error-view').style.display = 'block';
+                document.getElementById('error-view').textContent = '❌ Ошибка: ' + e.message;
+            }
+            
+            btn.disabled = false;
+            btn.textContent = '🏗️ Сгенерировать план';
+        }
+        
+        // Check health on load
+        fetch(API + '/health').catch(() => toast('⚠️ Сервер не доступен'));
     </script>
 </body>
 </html>
