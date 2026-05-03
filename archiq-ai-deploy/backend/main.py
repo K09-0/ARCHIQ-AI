@@ -723,22 +723,27 @@ async def ai_architect_endpoint(
     - Учёт участка и дополнительных требований
     """
     if not GEMINI_API_KEY:
-        return JSONResponse({"error": "GEMINI_API_KEY not configured"}, 400)
+        return JSONResponse({"error": "GEMINI_API_KEY not configured"}, status_code=400)
     
-    result = ai_architect_v2(
-        building_type=bt,
-        area=area,
-        floors=fl,
-        rooms_count=rooms,
-        site_width=sw,
-        site_depth=sd,
-        requirements=req,
-        gemini_api_key=GEMINI_API_KEY,
-        model_name=model,
-    )
+    try:
+        result = ai_architect_v2(
+            building_type=bt,
+            area=area,
+            floors=fl,
+            rooms_count=rooms,
+            site_width=sw,
+            site_depth=sd,
+            requirements=req,
+            gemini_api_key=GEMINI_API_KEY,
+            model_name=model,
+        )
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        return JSONResponse({"error": str(e), "traceback": tb[:1000]}, status_code=500)
     
     if not result.success:
-        return JSONResponse({"error": result.error}, 500)
+        return JSONResponse({"error": result.error}, status_code=500)
     
     return result.to_dict()
 
