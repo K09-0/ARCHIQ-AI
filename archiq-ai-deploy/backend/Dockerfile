@@ -5,7 +5,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY *.py .
+# Copy all Python modules (not just main.py)
+COPY main.py .
+COPY site_analyzer.py .
+COPY ai_architect.py .
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
