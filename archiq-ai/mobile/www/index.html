@@ -4,30 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#0f172a">
-    <title>Archiq AI — Генератор планов</title>
+    <title>Archiq AI v2</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-        .header { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 12px 16px; text-align: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 100; }
-        .header h1 { font-size: 18px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .header p { color: #64748b; font-size: 11px; }
+        .hdr { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 14px 16px; text-align: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 100; }
+        .hdr h1 { font-size: 18px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hdr p { color: #64748b; font-size: 11px; }
         
         /* Steps */
         .steps { display: flex; background: #1e293b; border-bottom: 1px solid #334155; overflow-x: auto; }
-        .step { flex: 1; padding: 10px 8px; text-align: center; font-size: 11px; color: #475569; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .step { flex: 1; padding: 10px 8px; text-align: center; font-size: 11px; color: #475569; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; }
         .step.active { color: #38bdf8; border-bottom-color: #38bdf8; }
         .step.done { color: #22c55e; border-bottom-color: #22c55e; }
         
         /* Content */
         .content { padding: 16px; padding-bottom: 40px; }
-        .step-content { display: none; animation: fadeIn 0.3s; }
-        .step-content.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .sc { display: none; animation: fi .3s; }
+        .sc.active { display: block; }
+        @keyframes fi { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
         
         /* Cards */
         .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #334155; }
         .card h3 { font-size: 14px; color: #f8fafc; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        .card h3 .icon { font-size: 18px; }
         
         /* Form */
         label { display: block; color: #94a3b8; font-size: 12px; margin-bottom: 4px; margin-top: 10px; }
@@ -39,24 +38,29 @@
         .row > div { flex: 1; }
         
         /* Buttons */
-        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
         .btn-primary { background: linear-gradient(135deg, #38bdf8, #818cf8); color: #0f172a; margin-top: 16px; }
         .btn-primary:active { transform: scale(0.98); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         
         /* Plans */
-        .plan-frame { background: #fff; border-radius: 8px; overflow: hidden; margin-bottom: 12px; border: 1px solid #334155; }
-        .plan-frame h4 { padding: 8px 12px; background: #1e293b; color: #38bdf8; font-size: 13px; }
-        .plan-frame svg { width: 100%; height: auto; display: block; }
+        .pf { background: #fff; border-radius: 8px; overflow: hidden; margin-bottom: 12px; border: 1px solid #334155; }
+        .pf h4 { padding: 8px 12px; background: #1e293b; color: #38bdf8; font-size: 13px; }
+        .pf svg { width: 100%; height: auto; display: block; }
         
         /* Specs */
         .specs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
-        .spec { background: #0f172a; border-radius: 8px; padding: 10px; }
-        .spec .label { color: #64748b; font-size: 10px; text-transform: uppercase; }
-        .spec .value { color: #e2e8f0; font-size: 16px; font-weight: 600; margin-top: 2px; }
+        .sp { background: #0f172a; border-radius: 8px; padding: 10px; }
+        .sp .l { color: #64748b; font-size: 10px; text-transform: uppercase; }
+        .sp .v { color: #e2e8f0; font-size: 16px; font-weight: 600; margin-top: 2px; }
         
         /* Compliance */
-        .compliance li { color: #22c55e; font-size: 12px; padding: 4px 0 4px 10px; border-left: 2px solid #22c55e; margin-bottom: 4px; list-style: none; }
+        .cl li { color: #22c55e; font-size: 12px; padding: 4px 0 4px 10px; border-left: 2px solid #22c55e; margin-bottom: 4px; list-style: none; }
+        
+        /* Download buttons */
+        .dl-btns { display: flex; gap: 8px; margin-top: 12px; }
+        .dl-btns a { flex: 1; text-align: center; padding: 10px; background: #334155; color: #e2e8f0; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600; }
+        .dl-btns a:hover { background: #475569; }
         
         /* Loading */
         .loading { text-align: center; padding: 60px 20px; }
@@ -70,64 +74,73 @@
         /* Toast */
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 8px 16px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity 0.3s; z-index: 200; pointer-events: none; }
         .toast.show { opacity: 1; }
+        
+        /* Quick presets */
+        .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .preset { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #94a3b8; cursor: pointer; }
+        .preset:hover { border-color: #38bdf8; color: #38bdf8; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🏗️ Archiq AI</h1>
-        <p>Генератор архитектурных планов</p>
+    <div class="hdr">
+        <h1>🏗️ Archiq AI v2</h1>
+        <p>Профессиональный генератор планов</p>
     </div>
     
     <div class="steps">
-        <div class="step active" data-step="1">① Проект</div>
+        <div class="step active" data-step="1">① Параметры</div>
         <div class="step" data-step="2">② Участок</div>
-        <div class="step" data-step="3">③ Результат</div>
+        <div class="step" data-step="3">③ План</div>
     </div>
     
     <div class="content">
         <!-- STEP 1 -->
-        <div class="step-content active" id="s1">
+        <div class="sc active" id="s1">
             <div class="card">
-                <h3><span class="icon">📐</span> Параметры здания</h3>
-                <label>Тип здания</label>
-                <select id="p-type">
+                <h3>📐 Здание</h3>
+                <div class="presets">
+                    <div class="preset" onclick="preset(80,1,3)">Дом 80м²</div>
+                    <div class="preset" onclick="preset(120,1,4)">Дом 120м²</div>
+                    <div class="preset" onclick="preset(150,2,5)">Дом 150м²</div>
+                    <div class="preset" onclick="preset(200,2,6)">Дом 200м²</div>
+                </div>
+                <label>Тип</label>
+                <select id="p-bt">
                     <option value="жилой дом">🏠 Жилой дом</option>
                     <option value="дача">🏡 Дача</option>
-                    <option value="гараж">🚗 Гараж</option>
                     <option value="баня">🧖 Баня</option>
-                    <option value="офис">🏢 Офис</option>
-                    <option value="магазин">🏪 Магазин</option>
+                    <option value="гараж">🚗 Гараж</option>
                 </select>
                 <div class="row">
                     <div><label>Площадь, м²</label><input type="number" id="p-area" value="120" min="20" max="500"></div>
-                    <div><label>Этажей</label><select id="p-floors"><option>1</option><option>2</option><option>3</option></select></div>
+                    <div><label>Этажей</label><select id="p-fl"><option>1</option><option>2</option><option>3</option></select></div>
                 </div>
                 <label>Комнат</label>
                 <input type="number" id="p-rooms" value="4" min="1" max="10">
                 <label>Требования</label>
-                <textarea id="p-req" placeholder="Гараж на 2 машины, терраса, большая гостиная..."></textarea>
+                <textarea id="p-req" placeholder="Гараж, терраса, большая гостиная..."></textarea>
                 <button class="btn btn-primary" onclick="go(2)">Далее →</button>
             </div>
         </div>
         
         <!-- STEP 2 -->
-        <div class="step-content" id="s2">
+        <div class="sc" id="s2">
             <div class="card">
-                <h3><span class="icon">📍</span> Участок</h3>
+                <h3>📍 Участок</h3>
                 <div class="row">
-                    <div><label>Ширина, м</label><input type="number" id="s-w" value="20" min="5" max="200"></div>
-                    <div><label>Глубина, м</label><input type="number" id="s-d" value="30" min="5" max="200"></div>
+                    <div><label>Ширина, м</label><input type="number" id="p-sw" value="20" min="5" max="200"></div>
+                    <div><label>Глубина, м</label><input type="number" id="p-sd" value="30" min="5" max="200"></div>
                 </div>
-                <label style="margin-top:14px">Загрузить план участка (фото)</label>
-                <input type="file" id="s-file" accept="image/*">
-                <p style="color:#475569;font-size:11px;margin-top:4px;">AI распознает размеры и объекты</p>
-                <button class="btn btn-primary" id="gen-btn" onclick="generate()">🏗️ Сгенерировать план</button>
+                <label style="margin-top:14px">Загрузить план участка</label>
+                <input type="file" id="p-file" accept="image/*">
+                <p style="color:#475569;font-size:11px;margin-top:4px;">AI распознает размеры</p>
+                <button class="btn btn-primary" id="gen-btn" onclick="generate()">🏗️ Сгенерировать</button>
             </div>
-            <div id="s2-error"></div>
+            <div id="s2-err"></div>
         </div>
         
         <!-- STEP 3 -->
-        <div class="step-content" id="s3">
+        <div class="sc" id="s3">
             <div id="loading" class="loading" style="display:none;">
                 <div class="spinner"></div>
                 <p>Генерирую архитектурный план...</p>
@@ -135,14 +148,18 @@
             <div id="error" class="error" style="display:none;"></div>
             <div id="result" style="display:none;">
                 <div class="card">
-                    <h3><span class="icon">📋</span> Спецификация</h3>
+                    <h3>📋 Спецификация</h3>
                     <div class="specs" id="specs"></div>
-                    <ul class="compliance" id="compliance"></ul>
+                    <ul class="cl" id="comp"></ul>
                     <p id="desc" style="color:#94a3b8;font-size:12px;margin-top:8px;"></p>
                 </div>
-                <div class="plan-frame"><h4>📍 План участка</h4><div id="site-svg"></div></div>
-                <div class="plan-frame"><h4>📐 Поэтажный план</h4><div id="floor-svg"></div></div>
-                <button class="btn" style="background:#334155;color:#e2e8f0;" onclick="go(1)">← Новый проект</button>
+                <div class="pf"><h4>📍 План участка</h4><div id="site-view"></div></div>
+                <div class="pf"><h4>📐 Поэтажный план</h4><div id="floor-view"></div></div>
+                <div class="dl-btns">
+                    <a id="dl-dxf" href="#" target="_blank">📐 DXF</a>
+                    <a id="dl-site" href="#" target="_blank">📍 SVG</a>
+                </div>
+                <button class="btn" style="background:#334155;color:#e2e8f0;margin-top:12px;" onclick="go(1)">← Новый проект</button>
             </div>
         </div>
     </div>
@@ -160,8 +177,14 @@
                 if (sn < n) s.classList.add('done');
                 if (sn === n) s.classList.add('active');
             });
-            document.querySelectorAll('.step-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.sc').forEach(c => c.classList.remove('active'));
             document.getElementById('s' + n).classList.add('active');
+        }
+        
+        function preset(area, fl, rooms) {
+            document.getElementById('p-area').value = area;
+            document.getElementById('p-fl').value = fl;
+            document.getElementById('p-rooms').value = rooms;
         }
         
         async function generate() {
@@ -174,44 +197,44 @@
             document.getElementById('error').style.display = 'none';
             
             const fd = new FormData();
-            fd.append('name', document.getElementById('p-type').selectedOptions[0].text);
-            fd.append('building_type', document.getElementById('p-type').value);
+            fd.append('name', document.getElementById('p-bt').selectedOptions[0].text);
+            fd.append('bt', document.getElementById('p-bt').value);
             fd.append('area', document.getElementById('p-area').value);
-            fd.append('floors', document.getElementById('p-floors').value);
+            fd.append('fl', document.getElementById('p-fl').value);
             fd.append('rooms', document.getElementById('p-rooms').value);
-            fd.append('site_width', document.getElementById('s-w').value);
-            fd.append('site_depth', document.getElementById('s-d').value);
-            fd.append('requirements', document.getElementById('p-req').value);
-            const f = document.getElementById('s-file').files[0];
+            fd.append('sw', document.getElementById('p-sw').value);
+            fd.append('sd', document.getElementById('p-sd').value);
+            fd.append('req', document.getElementById('p-req').value);
+            const f = document.getElementById('p-file').files[0];
             if (f) fd.append('site_plan', f);
             
             try {
-                const res = await fetch(API + '/generate-plan', { method: 'POST', body: fd });
+                const res = await fetch(API + '/generate', { method: 'POST', body: fd });
                 if (!res.ok) throw new Error((await res.json()).detail || res.status);
-                const data = await res.json();
+                const d = await res.json();
+                const sp = d.specs;
                 
-                // Specs
-                const sp = data.specs;
                 document.getElementById('specs').innerHTML = 
-                    `<div class="spec"><div class="label">Общая</div><div class="value">${sp.total_area} м²</div></div>
-                     <div class="spec"><div class="label">Жилая</div><div class="value">${sp.living_area} м²</div></div>
-                     <div class="spec"><div class="label">Этажей</div><div class="value">${sp.floors}</div></div>
-                     <div class="spec"><div class="label">Помещений</div><div class="value">${sp.rooms_count}</div></div>
-                     <div class="spec"><div class="label">Здание</div><div class="value">${sp.building_dimensions}</div></div>
-                     <div class="spec"><div class="label">Участок</div><div class="value">${sp.site_dimensions}</div></div>
-                     <div class="spec"><div class="label">Застройка</div><div class="value">${sp.site_coverage}%</div></div>
-                     <div class="spec"><div class="label">Периметр</div><div class="value">${sp.perimeter} м</div></div>`;
+                    `<div class="sp"><div class="l">Общая</div><div class="v">${sp.total_area} м²</div></div>
+                     <div class="sp"><div class="l">Жилая</div><div class="v">${sp.living_area} м²</div></div>
+                     <div class="sp"><div class="l">Этажей</div><div class="v">${sp.floors}</div></div>
+                     <div class="sp"><div class="l">Помещений</div><div class="v">${sp.rooms}</div></div>
+                     <div class="sp"><div class="l">Здание</div><div class="v">${sp.bldg_dim}</div></div>
+                     <div class="sp"><div class="l">Участок</div><div class="v">${sp.site_dim}</div></div>
+                     <div class="sp"><div class="l">Застройка</div><div class="v">${sp.coverage}%</div></div>
+                     <div class="sp"><div class="l">Периметр</div><div class="v">${sp.perimeter} м</div></div>`;
                 
-                document.getElementById('compliance').innerHTML = (sp.compliance || []).map(c => '<li>' + c + '</li>').join('');
+                document.getElementById('comp').innerHTML = (sp.compliance || []).map(c => '<li>' + c + '</li>').join('');
                 document.getElementById('desc').textContent = sp.description;
                 
-                // SVGs
-                const [siteR, floorR] = await Promise.all([
-                    fetch(API + '/site-plan-svg?project_id=' + data.project_id),
-                    fetch(API + '/floor-plan-svg?project_id=' + data.project_id)
-                ]);
-                document.getElementById('site-svg').innerHTML = await siteR.text();
-                document.getElementById('floor-svg').innerHTML = await floorR.text();
+                // Load SVGs
+                const pid = d.id;
+                document.getElementById('site-view').innerHTML = '<iframe src="' + API + '/site-svg?id=' + pid + '" style="width:100%;border:none;height:auto;aspect-ratio:4/3;"></iframe>';
+                document.getElementById('floor-view').innerHTML = '<iframe src="' + API + '/floor-svg?id=' + pid + '" style="width:100%;border:none;height:auto;aspect-ratio:4/3;"></iframe>';
+                
+                // Download links
+                document.getElementById('dl-site').href = API + '/site-svg?id=' + pid;
+                document.getElementById('dl-dxf').href = API + '/dxf?id=' + pid;
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('result').style.display = 'block';
@@ -222,7 +245,7 @@
                 document.getElementById('error').textContent = '❌ ' + e.message;
             }
             btn.disabled = false;
-            btn.textContent = '🏗️ Сгенерировать план';
+            btn.textContent = '🏗️ Сгенерировать';
         }
         
         fetch(API + '/health').catch(() => toast('⚠️ Сервер не доступен'));
