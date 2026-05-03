@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
 
+from site_analyzer import analyze_site_plan, analysis_to_plan_params
+
 # ==================== CONFIG ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")
@@ -523,9 +525,9 @@ app = FastAPI(title="Archiq AI v4")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 LANDING = """<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Archiq AI v4</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}.c{max-width:600px;text-align:center}.l{font-size:3rem;font-weight:800;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}.s{color:#94a3b8;margin-bottom:2rem}.st{display:inline-flex;align-items:center;gap:.5rem;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:.5rem 1rem;border-radius:999px;margin-bottom:2rem}.d{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:p 2s infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.4}}.e{text-align:left;background:rgba(30,41,59,.8);border:1px solid #334155;border-radius:12px;padding:1.5rem}.e h2{font-size:1rem;color:#94a3b8;margin-bottom:1rem;text-transform:uppercase}.r{display:flex;gap:1rem;padding:.6rem 0;border-bottom:1px solid #1e293b}.r:last-child{border-bottom:none}.m{font-family:monospace;font-size:.8rem;font-weight:700;min-width:55px;padding:.15rem .4rem;border-radius:4px;text-align:center}.g{background:rgba(56,189,248,.15);color:#38bdf8}.p{background:rgba(168,85,247,.15);color:#a855f7}.t{font-family:monospace;font-size:.85rem;color:#e2e8f0}.x{color:#64748b;font-size:.8rem;margin-left:auto}.f{margin-top:2rem;color:#475569;font-size:.8rem}.f a{color:#818cf8;text-decoration:none}</style></head>
-<body><div class="c"><div class="l">🏗️ Archiq AI v4</div><div class="s">AI-архитектор + чертежи с окнами/дверями + PDF/DXF</div><div class="st"><span class="d"></span> Работает</div>
-<div class="e"><h2>API</h2><div class="r"><span class="m g">GET</span><span class="t">/health</span><span class="x">Статус</span></div><div class="r"><span class="m p">POST</span><span class="t">/generate</span><span class="x">Генерация (AI)</span></div><div class="r"><span class="m g">GET</span><span class="t">/site-svg?id=...</span><span class="x">SVG участок</span></div><div class="r"><span class="m g">GET</span><span class="t">/floor-svg?id=...</span><span class="x">SVG этаж</span></div><div class="r"><span class="m g">GET</span><span class="t">/pdf?id=...</span><span class="x">PDF документация</span></div><div class="r"><span class="m g">GET</span><span class="t">/dxf?id=...</span><span class="x">DXF AutoCAD</span></div></div>
+<title>Archiq AI v5</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}.c{max-width:600px;text-align:center}.l{font-size:3rem;font-weight:800;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}.s{color:#94a3b8;margin-bottom:2rem}.st{display:inline-flex;align-items:center;gap:.5rem;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:.5rem 1rem;border-radius:999px;margin-bottom:2rem}.d{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:p 2s infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.4}}.e{text-align:left;background:rgba(30,41,59,.8);border:1px solid #334155;border-radius:12px;padding:1.5rem}.e h2{font-size:1rem;color:#94a3b8;margin-bottom:1rem;text-transform:uppercase}.r{display:flex;gap:1rem;padding:.6rem 0;border-bottom:1px solid #1e293b}.r:last-child{border-bottom:none}.m{font-family:monospace;font-size:.8rem;font-weight:700;min-width:55px;padding:.15rem .4rem;border-radius:4px;text-align:center}.g{background:rgba(56,189,248,.15);color:#38bdf8}.p{background:rgba(168,85,247,.15);color:#a855f7}.o{background:rgba(251,146,60,.15);color:#fb923c}.t{font-family:monospace;font-size:.85rem;color:#e2e8f0}.x{color:#64748b;font-size:.8rem;margin-left:auto}.f{margin-top:2rem;color:#475569;font-size:.8rem}.f a{color:#818cf8;text-decoration:none}</style></head>
+<body><div class="c"><div class="l">🏗️ Archiq AI v5</div><div class="s">AI-анализ плана участка + генератор планировок + чертежи + PDF/DXF</div><div class="st"><span class="d"></span> Работает</div>
+<div class="e"><h2>API</h2><div class="r"><span class="m g">GET</span><span class="t">/health</span><span class="x">Статус</span></div><div class="r"><span class="m p">POST</span><span class="t">/generate</span><span class="x">Генерация по параметрам</span></div><div class="r"><span class="m p">POST</span><span class="t">/analyze-site</span><span class="x">🆕 AI-анализ плана участка</span></div><div class="r"><span class="m o">POST</span><span class="t">/generate-from-site</span><span class="x">🆕 План → планировка</span></div><div class="r"><span class="m g">GET</span><span class="t">/site-svg?id=...</span><span class="x">SVG участок</span></div><div class="r"><span class="m g">GET</span><span class="t">/floor-svg?id=...</span><span class="x">SVG этаж</span></div><div class="r"><span class="m g">GET</span><span class="t">/pdf?id=...</span><span class="x">PDF документация</span></div><div class="r"><span class="m g">GET</span><span class="t">/dxf?id=...</span><span class="x">DXF AutoCAD</span></div></div>
 <div class="f"><p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p></div></div></body></html>"""
 
 def init_db():
@@ -590,15 +592,107 @@ def list_p():
     return [dict(r) for r in rows]
 
 @app.post("/analyze-site")
-async def analyze(file:UploadFile=File(...)):
-    if not GEMINI_API_KEY: return {"error":"GEMINI_API_KEY not set"}
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        c=await file.read()
-        m=genai.GenerativeModel("gemini-1.5-flash")
-        r=m.generate_content(["Архитектор: проанализируй план участка. JSON: {\"site_width\":X,\"site_depth\":Y}", {"mime_type":"image/jpeg","data":base64.b64encode(c).decode()}])
-        t=r.text; j=re.search(r'\{[\s\S]*\}',t)
-        return json.loads(j.group()) if j else {"text":t}
-    except ImportError: return {"error":"Install google-generativeai"}
-    except Exception as e: return {"error":str(e)}
+async def analyze_site(file:UploadFile=File(...), model:str=Form("gemini-2.0-flash")):
+    """Этап 3: AI-анализ плана участка через Gemini Vision.
+    
+    Загрузите изображение плана участка — получите:
+    - Размеры участка (ширина, глубина, площадь)
+    - Границы участка
+    - Существующие постройки
+    - Красные линии
+    - Авто-калибровка масштаба
+    - Северная ориентация
+    - Подъездные пути, озеленение
+    """
+    if not GEMINI_API_KEY:
+        return JSONResponse({"error": "GEMINI_API_KEY not configured"}, 400)
+    
+    content = await file.read()
+    if not content:
+        return JSONResponse({"error": "Empty file"}, 400)
+    
+    mime = file.content_type or "image/jpeg"
+    result = analyze_site_plan(content, mime, GEMINI_API_KEY, model)
+    
+    if not result.success:
+        return JSONResponse({"error": result.error}, 500)
+    
+    return result.to_dict()
+
+
+@app.post("/generate-from-site")
+async def generate_from_site(
+    file: UploadFile = File(...),
+    name: str = Form("Проект"),
+    bt: str = Form("жилой дом"),
+    area: float = Form(100),
+    fl: int = Form(1),
+    rooms: int = Form(3),
+    req: str = Form(""),
+    model: str = Form("gemini-2.0-flash"),
+):
+    """Этап 3+4: Загрузить план участка → AI анализ → генерация планировки.
+    
+    1. Анализирует план участка через Gemini Vision
+    2. Извлекает размеры и параметры
+    3. Генерирует оптимальную планировку
+    4. Создаёт SVG + PDF + DXF
+    """
+    if not GEMINI_API_KEY:
+        return JSONResponse({"error": "GEMINI_API_KEY not configured"}, 400)
+    
+    content = await file.read()
+    if not content:
+        return JSONResponse({"error": "Empty file"}, 400)
+    
+    mime = file.content_type or "image/jpeg"
+    
+    # Step 1: Analyze site plan
+    analysis = analyze_site_plan(content, mime, GEMINI_API_KEY, model)
+    
+    if not analysis.success:
+        return JSONResponse({"error": f"Site analysis failed: {analysis.error}"}, 500)
+    
+    # Step 2: Convert analysis to plan parameters
+    site_params = analysis_to_plan_params(analysis)
+    
+    # Step 3: Generate plan using detected site dimensions
+    proj = {
+        "name": name,
+        "building_type": bt,
+        "area": area,
+        "floors": fl,
+        "rooms": rooms,
+        "site_width": site_params["site_width"],
+        "site_depth": site_params["site_depth"],
+        "requirements": req,
+    }
+    
+    pl = gen_plan(proj)
+    sp = specs(pl)
+    pid = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Step 4: Generate all outputs
+    (OUTPUT / f"{pid}_site.svg").write_text(svg_site(pl))
+    (OUTPUT / f"{pid}_floor.svg").write_text(svg_floor(pl))
+    (OUTPUT / f"{pid}.dxf").write_text(export_dxf(pl))
+    (OUTPUT / f"{pid}.pdf").write_bytes(gen_pdf(pl))
+    
+    # Save to DB
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO p VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (pid, name, bt, area, fl, rooms,
+         site_params["site_width"], site_params["site_depth"],
+         req, json.dumps(pl), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": pid,
+        "site_analysis": analysis.to_dict(),
+        "site_params": site_params,
+        "plan": pl,
+        "specs": sp,
+    }
