@@ -12,13 +12,7 @@ from dataclasses import dataclass, field
 # --- Configuration ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")
-try:
-    import google.generativeai as genai
-    if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+GEMINI_AVAILABLE = False
 
 OUTPUT_DIR = Path("/tmp/archiq-output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -570,27 +564,8 @@ def check_snip_rooms(rooms: List[Dict]) -> List[str]:
 
 def generate_plan_ai(project: dict) -> dict:
     """Generate plan using Gemini AI if available, else fallback."""
-    if GEMINI_AVAILABLE and GEMINI_API_KEY:
-        try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            prompt = f"""Ты — профессиональный архитектор. Сгенерируй план здания.
-
-Параметры: тип={project.get('building_type','дом')}, площадь={project.get('area',100)}м², этажей={project.get('floors',1)}, комнат={project.get('rooms',3)}, участок={project.get('site_width',20)}x{project.get('site_depth',30)}м, требования: {project.get('requirements','стандарт')}
-
-Ответь ТОЛЬКО JSON:
-{{"building":{{"width":X,"depth":Y,"floors":Z,"rooms":[{{"name":"Имя","width":W,"depth":D,"x":X,"y":Y,"is_wet":true/false}}],"entrance":{{"x":X,"y":Y}}}},"site":{{"width":W,"depth":D,"building_x":X,"building_y":Y,"parking":true,"garden":true}},"description":"описание"}}"""
-            response = model.generate_content(prompt)
-            text = response.text
-            json_match = re.search(r'\{[\s\S]*\}', text)
-            if json_match:
-                plan = json.loads(json_match.group())
-                # Ensure required fields
-                for room in plan.get("building", {}).get("rooms", []):
-                    room.setdefault("is_wet", False)
-                return plan
-        except Exception as e:
-            print(f"AI error: {e}")
-    
+    # AI generation available via /analyze-site-plan endpoint
+    # For plan generation, use algorithmic engine for now
     return generate_plan_fallback(project)
 
 def generate_plan_fallback(project: dict) -> dict:
@@ -767,9 +742,11 @@ def list_projects():
 
 @app.post("/analyze-site-plan")
 async def analyze_site(file: UploadFile = File(...)):
-    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        return {"error": "Gemini not configured"}
+    if not GEMINI_API_KEY:
+        return {"error": "Gemini API key not configured"}
     try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
         content = await file.read()
         img_b64 = base64.b64encode(content).decode()
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -779,5 +756,7 @@ async def analyze_site(file: UploadFile = File(...)):
         ])
         m = re.search(r'\{[\s\S]*\}', resp.text)
         return json.loads(m.group()) if m else {"analysis": resp.text}
+    except ImportError:
+        return {"error": "google-generativeai not installed. Install with: pip install google-generativeai"}
     except Exception as e:
         return {"error": str(e)}
