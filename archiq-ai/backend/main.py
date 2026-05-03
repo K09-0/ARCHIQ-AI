@@ -2,26 +2,16 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
-import sqlite3
-import os
-import json
-import io
-import math
-import base64
-import re
+from typing import Optional, List, Dict, Any, Tuple
+import sqlite3, os, json, io, math, random, base64, re
 from datetime import datetime
 from pathlib import Path
+from dataclasses import dataclass, field
 
 # --- Configuration ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 HF_API_KEY = os.getenv("HF_API_KEY", "")
-HF_OCR_MODEL = os.getenv("HF_OCR_MODEL", "microsoft/trocr-base-printed")
-DB_PATH = os.getenv("DB_PATH", "norms.db")
-
-# --- Lazy Gemini import ---
 try:
     import google.generativeai as genai
     if GEMINI_API_KEY:
@@ -30,144 +20,272 @@ try:
 except ImportError:
     GEMINI_AVAILABLE = False
 
-# --- Output directory ---
 OUTPUT_DIR = Path("/tmp/archiq-output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ==================== AI ARCHITECT ====================
+# ==================== CORE: ROOM LAYOUT ENGINE ====================
 
-def ai_architect_prompt(project: dict) -> str:
-    return f"""Ты — профессиональный архитектор. Сгенерируй архитектурный план здания.
+@dataclass
+class Room:
+    name: str
+    min_area: float
+    max_area: float
+    min_dim: float  # minimum dimension
+    preferred_pos: str  # "any", "sun", "north", "quiet"
+    has_window: bool = True
+    has_door: bool = True
+    is_wet: bool = False  # bathroom/kitchen need plumbing
+    width: float = 0
+    depth: float = 0
+    x: float = 0
+    y: float = 0
 
-Параметры проекта:
-- Тип здания: {project.get('building_type', 'жилой дом')}
-- Площадь: {project.get('area', 100)} м²
-- Этажность: {project.get('floors', 1)}
-- Количество комнат: {project.get('rooms', 3)}
-- Участок: {project.get('site_width', 20)}м x {project.get('site_depth', 30)}м
-- Дополнительные требования: {project.get('requirements', 'стандартная планировка')}
+@dataclass
+class Wall:
+    x1: float; y1: float; x2: float; y2: float; thickness: float = 0.3
+    is_external: bool = True
 
-Ответь ТОЛЬКО JSON в этом формате (без markdown, без пояснений):
-{{
-  "building": {{
-    "width": 12,
-    "depth": 10,
-    "floors": 1,
-    "rooms": [
-      {{"name": "Гостиная", "width": 5, "depth": 4, "x": 0, "y": 0}},
-      {{"name": "Кухня", "width": 3, "depth": 4, "x": 5, "y": 0}},
-      {{"name": "Спальня 1", "width": 3.5, "depth": 4, "x": 0, "y": 4}},
-      {{"name": "Спальня 2", "width": 3.5, "depth": 4, "x": 3.5, "y": 4}},
-      {{"name": "Ванная", "width": 2.5, "depth": 2, "x": 7, "y": 4}},
-      {{"name": "Прихожая", "width": 5, "depth": 2, "x": 7, "y": 6}}
-    ],
-    "entrance": {{"x": 6, "y": 0}},
-    "windows": [{{"room": "Гостиная", "x": 2.5, "y": 0, "width": 2}}, {{"room": "Спальня 1", "x": 1.75, "y": 8, "width": 1.5}}],
-    "doors": [{{"from": "Прихожая", "to": "Гостиная", "x": 3, "y": 0}}, {{"from": "Прихожая", "to": "Кухня", "x": 6.5, "y": 0}}]
-  }},
-  "site": {{
-    "width": {project.get('site_width', 20)},
-    "depth": {project.get('site_depth', 30)},
-    "building_x": 4,
-    "building_y": 10,
-    "parking": true,
-    "garden": true,
-    "driveway": true
-  }},
-  "compliance": [
-    "СНиП 2.08.01-89: площадь жилых комнат не менее 8 м²",
-    "СНиП 2.08.01-89: высота потолков не менее 2.5 м",
-    "СНиП 21-01-97: ширина коридоров не менее 1.2 м"
-  ],
-  "description": "Краткое описание проекта"
-}}"""
+@dataclass
+class Window:
+    wall_idx: int; pos: float; width: float; height: float = 1.5
 
-def generate_plan(project: dict) -> dict:
-    """Generate architectural plan using AI."""
-    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        # Fallback: generate a simple plan without AI
-        return fallback_plan(project)
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(ai_architect_prompt(project))
-        text = response.text
-        # Extract JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            return json.loads(json_match.group())
-        return fallback_plan(project)
-    except Exception as e:
-        print(f"AI error: {e}")
-        return fallback_plan(project)
+@dataclass
+class Door:
+    wall_idx: int; pos: float; width: float = 0.9
 
-def fallback_plan(project: dict) -> dict:
-    """Generate a simple plan without AI."""
-    area = project.get('area', 100)
-    rooms = project.get('rooms', 3)
-    floors = project.get('floors', 1)
-    floor_area = area / floors
+# СНиП-требования для типовых помещений
+ROOM_CATALOG = {
+    "гостиная":      Room("Гостиная",      18, 35, 3.5, "sun", True, True),
+    "кухня":         Room("Кухня",          8, 18, 2.5, "any", True, True, is_wet=True),
+    "спальня":       Room("Спальня",       10, 20, 3.0, "quiet", True, True),
+    "детская":       Room("Детская",       10, 18, 3.0, "sun", True, True),
+    "кабинет":       Room("Кабинет",        8, 15, 2.5, "quiet", True, True),
+    "ванная":        Room("Ванная",         3,  8, 1.6, "any", True, True, is_wet=True),
+    "туалет":        Room("Туалет",         1.2,3,  1.2, "any", False, True, is_wet=True),
+    "прихожая":      Room("Прихожая",       4, 10, 1.5, "any", False, True),
+    "коридор":       Room("Коридор",        3,  8, 1.2, "any", False, True),
+    "кладовая":      Room("Кладовая",       2,  6, 1.2, "any", False, False),
+    "гардеробная":   Room("Гардеробная",    4,  8, 1.5, "any", False, False),
+    "котельная":     Room("Котельная",      6, 12, 2.0, "any", True, True),
+    "терраса":       Room("Терраса",        6, 20, 2.5, "sun", False, True),
+    "гараж":         Room("Гараж",         18, 36, 3.5, "any", False, True),
+}
+
+def determine_rooms(building_type: str, area: float, rooms_count: int) -> List[Room]:
+    """Determine room types based on building parameters."""
+    result = []
     
-    # Default room layout
-    room_types = ["Гостиная", "Кухня", "Спальня 1"]
-    if rooms > 3:
-        room_types.extend([f"Спальня {i}" for i in range(2, rooms)])
-    if rooms > 2:
-        room_types.append("Ванная")
-        room_types.append("Прихожая")
-    if rooms > 4:
-        room_types.append("Кабинет")
+    if building_type in ("жилой дом", "дача"):
+        # Always needed
+        result.append(Room("Прихожая", 4, 10, 1.5, "any", False, True))
+        result.append(Room("Гостиная", max(16, area*0.2), max(30, area*0.3), 3.5, "sun", True, True))
+        result.append(Room("Кухня", max(8, area*0.1), max(16, area*0.15), 2.5, "any", True, True, is_wet=True))
+        result.append(Room("Ванная", 3, 6, 1.6, "any", True, True, is_wet=True))
+        result.append(Room("Коридор", 3, 8, 1.2, "any", False, True))
+        
+        # Bedrooms
+        bedroom_count = max(1, rooms_count - 2)  # minus living + kitchen
+        for i in range(bedroom_count):
+            name = "Спальня" if i == 0 else f"Спальня {i+1}"
+            if i == bedroom_count - 1 and rooms_count > 4:
+                name = "Детская"
+            result.append(Room(name, 10, 18, 3.0, "quiet", True, True))
+        
+        # Optional rooms
+        if area > 120:
+            result.append(Room("Кабинет", 8, 12, 2.5, "quiet", True, True))
+        if area > 150:
+            result.append(Room("Гардеробная", 4, 8, 1.5, "any", False, False))
+            result.append(Room("Кладовая", 2, 5, 1.2, "any", False, False))
+        if area > 100:
+            result.append(Room("Туалет", 1.5, 3, 1.2, "any", False, True, is_wet=True))
     
-    # Simple grid layout
-    building_width = math.sqrt(floor_area) * 1.2
-    building_depth = floor_area / building_width
-    rooms_list = []
-    x, y = 0, 0
-    row_height = building_depth / 2
+    elif building_type == "гараж":
+        result.append(Room("Гараж", 18, 36, 3.5, "any", False, True))
+        result.append(Room("Кладовая", 3, 8, 1.5, "any", False, False))
     
-    for i, room in enumerate(room_types[:rooms + 2]):
-        room_width = building_width / (rooms // 2 + 1)
-        rooms_list.append({
-            "name": room,
-            "width": round(room_width, 1),
-            "depth": round(row_height, 1),
-            "x": round(x, 1),
-            "y": round(y, 1)
-        })
-        x += room_width
-        if x >= building_width:
-            x = 0
-            y += row_height
+    elif building_type == "баня":
+        result.append(Room("Парная", 4, 8, 1.8, "any", False, False))
+        result.append(Room("Моечная", 4, 8, 1.8, "any", False, True, is_wet=True))
+        result.append(Room("Предбанник", 6, 12, 2.0, "any", True, True))
+        result.append(Room("Комната отдыха", 10, 20, 3.0, "any", True, True))
     
-    return {
-        "building": {
-            "width": round(building_width, 1),
-            "depth": round(building_depth, 1),
-            "floors": floors,
-            "rooms": rooms_list,
-            "entrance": {"x": round(building_width / 2, 1), "y": 0},
-            "windows": [],
-            "doors": []
-        },
-        "site": {
-            "width": project.get('site_width', 20),
-            "depth": project.get('site_depth', 30),
-            "building_x": 3,
-            "building_y": 5,
-            "parking": True,
-            "garden": True,
-            "driveway": True
-        },
-        "compliance": [
-            "СНиП 2.08.01-89: площадь жилых комнат не менее 8 м²",
-            "СНиП 2.08.01-89: высота потолков не менее 2.5 м"
-        ],
-        "description": f"Проект {project.get('building_type', 'жилого дома')} площадью {area} м², {floors} этаж(ей), {rooms} комнат"
-    }
+    elif building_type in ("офис", "магазин", "склад"):
+        result.append(Room("Основное помещение", area*0.6, area*0.8, 4.0, "any", True, True))
+        result.append(Room("Приёмная", 6, 12, 2.5, "any", True, True))
+        result.append(Room("Санузел", 3, 6, 1.6, "any", True, True, is_wet=True))
+        result.append(Room("Коридор", 3, 8, 1.2, "any", False, True))
+    
+    return result
 
-# ==================== SVG GENERATOR ====================
+def pack_rooms(rooms: List[Room], building_width: float, building_depth: float) -> List[Room]:
+    """Pack rooms into building footprint using bin-packing heuristic."""
+    target_area = building_width * building_depth
+    
+    # Calculate total room area and scale
+    total_room_area = sum(r.min_area for r in rooms)
+    corridor_area = target_area * 0.15  # 15% for corridors
+    usable_area = target_area - corridor_area
+    
+    if total_room_area > usable_area:
+        scale = usable_area / total_room_area
+        for r in rooms:
+            r.min_area *= scale
+            r.max_area *= scale
+    
+    # Sort by area descending (larger first)
+    rooms.sort(key=lambda r: r.min_area, reverse=True)
+    
+    # Grid-based placement
+    grid_w = building_width
+    grid_d = building_depth
+    placed = []
+    occupied = []  # list of (x, y, w, d)
+    
+    for room in rooms:
+        area = room.min_area
+        aspect = random.choice([(1.2, 0.83), (1.5, 0.67), (1.0, 1.0), (0.8, 1.25)])
+        rw = math.sqrt(area * aspect[0])
+        rd = area / rw
+        
+        # Clamp dimensions
+        rw = max(room.min_dim, min(rw, grid_w * 0.7))
+        rd = max(room.min_dim, min(rd, grid_d * 0.7))
+        rd = area / rw  # recalc to maintain area
+        
+        # Find position using best-fit
+        best_pos = None
+        best_score = float('inf')
+        
+        # Try grid positions
+        step = 0.5
+        for gx in [0] + [round(s * step, 1) for s in range(1, int(grid_w/step))]:
+            for gy in [0] + [round(s * step, 1) for s in range(1, int(grid_d/step))]:
+                if gx + rw > grid_w or gy + rd > grid_d:
+                    continue
+                
+                # Check overlap
+                overlap = False
+                for (ox, oy, ow, od) in occupied:
+                    if not (gx + rw <= ox + 0.01 or ox + ow <= gx + 0.01 or
+                            gy + rd <= oy + 0.01 or oy + od <= gy + 0.01):
+                        overlap = True
+                        break
+                if overlap:
+                    continue
+                
+                # Score: prefer corners and edges
+                score = gx + gy  # prefer top-left
+                if gx == 0: score -= 5  # prefer left wall (sun)
+                if gy == 0: score -= 3  # prefer front
+                if gx + rw >= grid_w - 0.1: score -= 2  # right wall OK
+                
+                if score < best_score:
+                    best_score = score
+                    best_pos = (gx, gy)
+        
+        if best_pos:
+            room.x = best_pos[0]
+            room.y = best_pos[1]
+            room.width = round(rw, 1)
+            room.depth = round(rd, 1)
+            placed.append(room)
+            occupied.append((room.x, room.y, room.width, room.depth))
+    
+    return placed
 
-def generate_site_plan_svg(plan: dict) -> str:
-    """Generate SVG site plan."""
+def generate_walls(rooms: List[Room], building_width: float, building_depth: float) -> List[Wall]:
+    """Generate walls between rooms and exterior."""
+    walls = []
+    
+    # Exterior walls
+    walls.append(Wall(0, 0, building_width, 0, 0.3, True))        # bottom
+    walls.append(Wall(0, building_depth, building_width, building_depth, 0.3, True))  # top
+    walls.append(Wall(0, 0, 0, building_depth, 0.3, True))         # left
+    walls.append(Wall(building_width, 0, building_width, building_depth, 0.3, True))  # right
+    
+    # Interior walls between adjacent rooms
+    for i, r1 in enumerate(rooms):
+        for j, r2 in enumerate(rooms):
+            if j <= i:
+                continue
+            # Check if rooms share a vertical edge
+            if abs(r1.x + r1.width - r2.x) < 0.15 or abs(r2.x + r2.width - r1.x) < 0.15:
+                y_start = max(r1.y, r2.y)
+                y_end = min(r1.y + r1.depth, r2.y + r2.depth)
+                if y_end > y_start + 0.5:
+                    wx = r1.x + r1.width if abs(r1.x + r1.width - r2.x) < 0.15 else r2.x + r2.width
+                    walls.append(Wall(wx, y_start, wx, y_end, 0.15, False))
+            
+            # Check if rooms share a horizontal edge
+            if abs(r1.y + r1.depth - r2.y) < 0.15 or abs(r2.y + r2.depth - r1.y) < 0.15:
+                x_start = max(r1.x, r2.x)
+                x_end = min(r1.x + r1.width, r2.x + r2.width)
+                if x_end > x_start + 0.5:
+                    wy = r1.y + r1.depth if abs(r1.y + r1.depth - r2.y) < 0.15 else r2.y + r2.depth
+                    walls.append(Wall(x_start, wy, x_end, wy, 0.15, False))
+    
+    return walls
+
+def generate_windows_doors(rooms: List[Room], walls: List[Wall], building_width: float, building_depth: float):
+    """Generate windows and doors."""
+    windows = []
+    doors = []
+    
+    for i, room in enumerate(rooms):
+        if room.has_window:
+            # Window on exterior wall
+            cx = room.x + room.width / 2
+            cy = room.y + room.depth / 2
+            
+            # Find nearest exterior wall
+            for wi, w in enumerate(walls):
+                if not w.is_external:
+                    continue
+                if w.y1 == 0 and w.y2 == 0:  # bottom wall
+                    if room.y < 0.5 and w.x1 <= cx <= w.x2:
+                        windows.append(Window(wi, (cx - w.x1) / (w.x2 - w.x1), 1.5))
+                elif w.y1 == building_depth:  # top wall
+                    if room.y + room.depth > building_depth - 0.5 and w.x1 <= cx <= w.x2:
+                        windows.append(Window(wi, (cx - w.x1) / (w.x2 - w.x1), 1.5))
+                elif w.x1 == 0 and w.x2 == 0:  # left wall
+                    if room.x < 0.5 and w.y1 <= cy <= w.y2:
+                        pass  # handle differently
+                elif w.x1 == building_width:  # right wall
+                    if room.x + room.width > building_width - 0.5:
+                        pass
+    
+    # Main entrance door
+    doors.append(Door(0, 0.5, 0.9))  # bottom wall, center-ish
+    
+    return windows, doors
+
+# ==================== SNiP COMPLIANCE ====================
+
+def check_snip(rooms: List[Room], floors: int) -> List[str]:
+    """Check SNiP compliance."""
+    issues = []
+    ok = []
+    
+    for r in rooms:
+        area = r.width * r.depth
+        if r.name in ("Спальня", "Детская") and area < 8:
+            issues.append(f"⚠️ {r.name}: площадь {area:.1f} м² < 8 м² (СНиП 2.08.01-89)")
+        elif r.name == "Гостиная" and area < 16:
+            issues.append(f"⚠️ {r.name}: площадь {area:.1f} м² < 16 м²")
+        elif r.name == "Кухня" and area < 6:
+            issues.append(f"⚠️ {r.name}: площадь {area:.1f} м² < 6 м²")
+        elif r.width < r.min_dim:
+            issues.append(f"⚠️ {r.name}: ширина {r.width:.1f} м < {r.min_dim} м")
+        else:
+            ok.append(f"✅ {r.name}: {area:.1f} м² — соответствует СНиП")
+    
+    return ok + issues
+
+# ==================== SVG GENERATORS ====================
+
+def generate_professional_site_svg(plan: dict) -> str:
+    """Generate professional site plan SVG with rose, dimensions, legend."""
     site = plan.get("site", {})
     building = plan.get("building", {})
     rooms = building.get("rooms", [])
@@ -176,232 +294,409 @@ def generate_site_plan_svg(plan: dict) -> str:
     site_d = site.get("depth", 30)
     bldg_w = building.get("width", 10)
     bldg_d = building.get("depth", 8)
-    bldg_x = site.get("building_x", 4)
-    bldg_y = site.get("building_y", 8)
+    bldg_x = site.get("building_x", 5)
+    bldg_y = site.get("building_y", 10)
+    floors = building.get("floors", 1)
     
-    scale = 20  # pixels per meter
-    svg_w = site_w * scale + 100
-    svg_h = site_d * scale + 100
+    SCALE = 16
+    MARGIN = 80
+    TITLE_H = 70
+    STAMP_H = 50
+    LEGEND_W = 160
+    
+    svg_w = site_w * SCALE + MARGIN * 2 + LEGEND_W
+    svg_h = site_d * SCALE + MARGIN * 2 + TITLE_H + STAMP_H
+    
+    bx = MARGIN + bldg_x * SCALE
+    by = MARGIN + TITLE_H + (site_d - bldg_y - bldg_d) * SCALE
+    bw = bldg_w * SCALE
+    bd = bldg_d * SCALE
     
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" width="{svg_w}" height="{svg_h}">
   <defs>
-    <style>
-      .site {{ fill: #f0f7f0; stroke: #2d5016; stroke-width: 2; }}
-      .building {{ fill: #e8e8e8; stroke: #333; stroke-width: 2; }}
-      .room {{ fill: #fff; stroke: #666; stroke-width: 1; }}
-      .room-label {{ font-family: Arial, sans-serif; font-size: 11px; fill: #333; text-anchor: middle; }}
-      .room-size {{ font-family: Arial, sans-serif; font-size: 9px; fill: #888; text-anchor: middle; }}
-      .dimension {{ font-family: Arial, sans-serif; font-size: 10px; fill: #1a73e8; }}
-      .title {{ font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; }}
-      .parking {{ fill: #ddd; stroke: #999; stroke-width: 1; }}
-      .garden {{ fill: #e8f5e9; stroke: #4caf50; stroke-width: 1; }}
-      .driveway {{ fill: #e0e0e0; stroke: #999; stroke-width: 1; stroke-dasharray: 4,2; }}
-      .entrance {{ fill: #ff9800; stroke: #e65100; stroke-width: 1; }}
-    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#333"/></marker>
+    <pattern id="grass" patternUnits="userSpaceOnUse" width="20" height="20"><rect width="20" height="20" fill="#e8f5e9"/><circle cx="5" cy="5" r="1" fill="#a5d6a7"/><circle cx="15" cy="15" r="1" fill="#a5d6a7"/></pattern>
+    <pattern id="parking" patternUnits="userSpaceOnUse" width="30" height="20"><rect width="30" height="20" fill="#e0e0e0"/><line x1="15" y1="0" x2="15" y2="20" stroke="#bbb" stroke-width="1"/></pattern>
   </defs>
   
-  <!-- Title -->
-  <text x="50" y="30" class="title">План участка</text>
-  <text x="50" y="48" style="font-family:Arial;font-size:11px;fill:#666;">{plan.get("description", "Архитектурный план")}</text>
+  <!-- Title block -->
+  <text x="{MARGIN}" y="30" font-family="Arial" font-size="18" font-weight="bold" fill="#333">ПЛАН УЧАСТКА</text>
+  <text x="{MARGIN}" y="50" font-family="Arial" font-size="12" fill="#666">{plan.get("description", "Архитектурный план")}</text>
+  <text x="{MARGIN}" y="64" font-family="Arial" font-size="10" fill="#999">Масштаб 1:{int(site_w*100/svg_w*10)}</text>
   
   <!-- Site boundary -->
-  <rect x="50" y="60" width="{site_w * scale}" height="{site_d * scale}" class="site" rx="2"/>
+  <rect x="{MARGIN}" y="{MARGIN + TITLE_H}" width="{site_w * SCALE}" height="{site_d * SCALE}" fill="url(#grass)" stroke="#2d5016" stroke-width="2" rx="1"/>
   
-  <!-- Garden area -->'''
-    
-    if site.get("garden"):
-        svg += f'''
-  <rect x="50" y="60" width="{site_w * scale}" height="{site_d * scale}" class="garden" rx="2" opacity="0.3"/>'''
-    
-    # Driveway
-    if site.get("driveway"):
-        svg += f'''
-  <rect x="{50 + bldg_x * scale - 3}" y="60" width="6" height="{bldg_y * scale}" class="driveway"/>'''
-    
-    # Building
-    svg += f'''
+  <!-- Driveway -->
+  <polygon points="{MARGIN + bldg_x * SCALE},{MARGIN + TITLE_H + site_d * SCALE} {MARGIN + (bldg_x + 3) * SCALE},{MARGIN + TITLE_H + site_d * SCALE} {MARGIN + (bldg_x + 3) * SCALE},{by + bd} {MARGIN + bldg_x * SCALE},{by + bd}" fill="#d7ccc8" stroke="#a1887f" stroke-width="1"/>
+  
   <!-- Building -->
-  <rect x="{50 + bldg_x * scale}" y="{60 + bldg_y * scale}" width="{bldg_w * scale}" height="{bldg_d * scale}" class="building"/>
-  
-  <!-- Rooms -->'''
+  <rect x="{bx}" y="{by}" width="{bw}" height="{bd}" fill="#fff" stroke="#333" stroke-width="2.5"/>
+  <!-- Building hatch -->
+  <rect x="{bx}" y="{by}" width="{bw}" height="{bd}" fill="#f5f5f5"/>'''
     
+    # Rooms
     for room in rooms:
-        rx = 50 + (bldg_x + room["x"]) * scale
-        ry = 60 + (bldg_y + room["y"]) * scale
-        rw = room["width"] * scale
-        rd = room["depth"] * scale
+        rx = bx + room["x"] * SCALE
+        ry = by + (bldg_d - room["y"] - room["depth"]) * SCALE
+        rw = room["width"] * SCALE
+        rd = room["depth"] * SCALE
+        area = room["width"] * room["depth"]
         svg += f'''
-  <rect x="{rx}" y="{ry}" width="{rw}" height="{rd}" class="room"/>
-  <text x="{rx + rw/2}" y="{ry + rd/2 - 5}" class="room-label">{room["name"]}</text>
-  <text x="{rx + rw/2}" y="{ry + rd/2 + 10}" class="room-size">{room["width"]}×{room["depth"]}м</text>'''
+  <rect x="{rx}" y="{ry}" width="{rw}" height="{rd}" fill="none" stroke="#666" stroke-width="1.5"/>
+  <text x="{rx + rw/2}" y="{ry + rd/2 - 6}" font-family="Arial" font-size="11" font-weight="bold" fill="#333" text-anchor="middle">{room["name"]}</text>
+  <text x="{rx + rw/2}" y="{ry + rd/2 + 8}" font-family="Arial" font-size="9" fill="#888" text-anchor="middle">{area:.1f} м²</text>'''
     
     # Entrance
-    entrance = building.get("entrance", {})
-    if entrance:
-        ex = 50 + (bldg_x + entrance.get("x", bldg_w/2)) * scale - 8
-        ey = 60 + (bldg_y + entrance.get("y", 0)) * scale - 3
-        svg += f'''
-  <rect x="{ex}" y="{ey}" width="16" height="6" class="entrance" rx="1"/>
-  <text x="{ex + 8}" y="{ey - 4}" style="font-size:9px;fill:#e65100;text-anchor:middle;">Вход</text>'''
-    
-    # Parking
-    if site.get("parking"):
-        px = 50 + (site_w - 6) * scale
-        py = 60 + (site_d - 8) * scale
-        svg += f'''
-  <rect x="{px}" y="{py}" width="{5 * scale}" height="{6 * scale}" class="parking"/>
-  <text x="{px + 2.5 * scale}" y="{py + 3 * scale}" style="font-family:Arial;font-size:11px;fill:#666;text-anchor:middle;">Парковка</text>'''
+    svg += f'''
+  <rect x="{bx + bw/2 - 10}" y="{by + bd - 3}" width="20" height="6" fill="#ff9800" stroke="#e65100" stroke-width="1" rx="1"/>
+  <text x="{bx + bw/2}" y="{by + bd + 18}" font-family="Arial" font-size="9" fill="#e65100" text-anchor="middle">ВХОД</text>'''
     
     # Dimensions
     svg += f'''
-  <!-- Dimensions -->
-  <text x="{50 + site_w * scale / 2}" y="{60 + site_d * scale + 25}" class="dimension" text-anchor="middle">{site_w}м</text>
-  <text x="{30}" y="{60 + site_d * scale / 2}" class="dimension" text-anchor="middle" transform="rotate(-90,{30},{60 + site_d * scale / 2})">{site_d}м</text>
-  <text x="{50 + bldg_x * scale + bldg_w * scale / 2}" y="{60 + bldg_y * scale - 8}" class="dimension" text-anchor="middle">{bldg_w}м × {bldg_d}м</text>
+  <!-- Site dimensions -->
+  <line x1="{MARGIN}" y1="{MARGIN + TITLE_H + site_d * SCALE + 15}" x2="{MARGIN + site_w * SCALE}" y2="{MARGIN + TITLE_H + site_d * SCALE + 15}" stroke="#1a73e8" stroke-width="1" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="{MARGIN + site_w * SCALE / 2}" y="{MARGIN + TITLE_H + site_d * SCALE + 30}" font-family="Arial" font-size="12" fill="#1a73e8" text-anchor="middle">{site_w} м</text>
   
+  <line x1="{MARGIN - 15}" y1="{MARGIN + TITLE_H}" x2="{MARGIN - 15}" y2="{MARGIN + TITLE_H + site_d * SCALE}" stroke="#1a73e8" stroke-width="1" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="{MARGIN - 25}" y="{MARGIN + TITLE_H + site_d * SCALE / 2}" font-family="Arial" font-size="12" fill="#1a73e8" text-anchor="middle" transform="rotate(-90,{MARGIN - 25},{MARGIN + TITLE_H + site_d * SCALE / 2})">{site_d} м</text>
+  
+  <!-- Building dimensions -->
+  <line x1="{bx}" y1="{by - 8}" x2="{bx + bw}" y2="{by - 8}" stroke="#e65100" stroke-width="0.8"/>
+  <text x="{bx + bw/2}" y="{by - 12}" font-family="Arial" font-size="10" fill="#e65100" text-anchor="middle">{bldg_w} м</text>
+  <line x1="{bx + bw + 8}" y1="{by}" x2="{bx + bw + 8}" y2="{by + bd}" stroke="#e65100" stroke-width="0.8"/>
+  <text x="{bx + bw + 16}" y="{by + bd/2}" font-family="Arial" font-size="10" fill="#e65100" text-anchor="middle" transform="rotate(90,{bx + bw + 16},{by + bd/2})">{bldg_d} м</text>'''
+    
+    # North arrow
+    na_cx = svg_w - LEGEND_W/2
+    na_cy = MARGIN + TITLE_H + 40
+    svg += f'''
+  <!-- North arrow -->
+  <line x1="{na_cx}" y1="{na_cy + 20}" x2="{na_cx}" y2="{na_cy - 20}" stroke="#333" stroke-width="2"/>
+  <polygon points="{na_cx},{na_cy - 25} {na_cx - 6},{na_cy - 10} {na_cx + 6},{na_cy - 10}" fill="#e53935"/>
+  <text x="{na_cx}" y="{na_cy - 30}" font-family="Arial" font-size="12" font-weight="bold" fill="#e53935" text-anchor="middle">N</text>'''
+    
+    # Legend
+    lx = svg_w - LEGEND_W + 10
+    ly = svg_h - STAMP_H - 10
+    svg += f'''
   <!-- Legend -->
-  <rect x="{svg_w - 150}" y="{svg_h - 100}" width="130" height="80" fill="#1e293b" rx="5" opacity="0.9"/>
-  <text x="{svg_w - 140}" y="{svg_h - 80}" style="font-family:Arial;font-size:11px;fill:#38bdf8;font-weight:bold;">Легенда</text>
-  <rect x="{svg_w - 140}" y="{svg_h - 70}" width="15" height="10" fill="#e8e8e8" stroke="#333"/>
-  <text x="{svg_w - 120}" y="{svg_h - 61}" style="font-family:Arial;font-size:10px;fill:#ccc;">Здание</text>
-  <rect x="{svg_w - 140}" y="{svg_h - 50}" width="15" height="10" fill="#ff9800"/>
-  <text x="{svg_w - 120}" y="{svg_h - 41}" style="font-family:Arial;font-size:10px;fill:#ccc;">Вход</text>
-  <rect x="{svg_w - 140}" y="{svg_h - 30}" width="15" height="10" fill="#ddd" stroke="#999"/>
-  <text x="{svg_w - 120}" y="{svg_h - 21}" style="font-family:Arial;font-size:10px;fill:#ccc;">Парковка</text>
+  <rect x="{lx - 10}" y="{ly - 80}" width="{LEGEND_W - 5}" height="90" fill="#1e293b" rx="5" opacity="0.95"/>
+  <text x="{lx}" y="{ly - 60}" font-family="Arial" font-size="11" font-weight="bold" fill="#38bdf8">Условные обозначения</text>
+  <rect x="{lx}" y="{ly - 48}" width="20" height="12" fill="#fff" stroke="#333" stroke-width="1.5"/>
+  <text x="{lx + 28}" y="{ly - 38}" font-family="Arial" font-size="10" fill="#ccc">Здание ({floors} эт.)</text>
+  <rect x="{lx}" y="{ly - 28}" width="20" height="6" fill="#ff9800" stroke="#e65100"/>
+  <text x="{lx + 28}" y="{ly - 21}" font-family="Arial" font-size="10" fill="#ccc">Вход</text>
+  <polygon points="{lx},{ly - 8} {lx + 10},{ly - 14} {lx + 10},{ly - 2}" fill="#e53935"/>
+  <text x="{lx + 28}" y="{ly - 6}" font-family="Arial" font-size="10" fill="#ccc">Север (N)</text>'''
+    
+    # Stamp (ГОСТ основная надпись)
+    stamp_y = svg_h - STAMP_H
+    svg += f'''
+  <!-- Stamp -->
+  <rect x="{MARGIN}" y="{stamp_y}" width="{site_w * SCALE}" height="{STAMP_H}" fill="none" stroke="#333" stroke-width="1.5"/>
+  <line x1="{MARGIN}" y1="{stamp_y + 20}" x2="{MARGIN + site_w * SCALE}" y2="{stamp_y + 20}" stroke="#333" stroke-width="1"/>
+  <line x1="{MARGIN + site_w * SCALE * 0.6}" y1="{stamp_y}" x2="{MARGIN + site_w * SCALE * 0.6}" y2="{stamp_y + STAMP_H}" stroke="#333" stroke-width="1"/>
+  <text x="{MARGIN + 5}" y="{stamp_y + 14}" font-family="Arial" font-size="9" fill="#333">План участка</text>
+  <text x="{MARGIN + site_w * SCALE * 0.6 + 5}" y="{stamp_y + 14}" font-family="Arial" font-size="9" fill="#333">Масштаб 1:100</text>
+  <text x="{MARGIN + 5}" y="{stamp_y + 38}" font-family="Arial" font-size="8" fill="#666">{datetime.now().strftime("%d.%m.%Y")}</text>
+  <text x="{MARGIN + site_w * SCALE * 0.6 + 5}" y="{stamp_y + 38}" font-family="Arial" font-size="8" fill="#666">Archiq AI</text>
 </svg>'''
     
     return svg
 
-def generate_floor_plan_svg(plan: dict) -> str:
-    """Generate detailed floor plan SVG."""
+def generate_professional_floor_svg(plan: dict) -> str:
+    """Generate professional floor plan SVG."""
     building = plan.get("building", {})
     rooms = building.get("rooms", [])
     bldg_w = building.get("width", 10)
     bldg_d = building.get("depth", 8)
     floors = building.get("floors", 1)
     
-    scale = 40
-    margin = 60
-    svg_w = bldg_w * scale + margin * 2
-    svg_h = bldg_d * scale + margin * 2 + 30
+    SCALE = 45
+    MARGIN = 80
+    TITLE_H = 70
+    STAMP_H = 50
+    TABLE_Y = 30  # room table height
+    
+    svg_w = bldg_w * SCALE + MARGIN * 2
+    svg_h = bldg_d * SCALE + MARGIN * 2 + TITLE_H + STAMP_H + TABLE_Y
     
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" width="{svg_w}" height="{svg_h}">
   <defs>
-    <style>
-      .wall {{ stroke: #333; stroke-width: 3; fill: none; }}
-      .wall-thin {{ stroke: #666; stroke-width: 1.5; fill: none; }}
-      .room {{ fill: #fafafa; }}
-      .room-label {{ font-family: Arial, sans-serif; font-size: 13px; fill: #333; text-anchor: middle; font-weight: bold; }}
-      .room-area {{ font-family: Arial, sans-serif; font-size: 10px; fill: #888; text-anchor: middle; }}
-      .title {{ font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #333; }}
-      .dim {{ font-family: Arial, sans-serif; font-size: 11px; fill: #1a73e8; }}
-      .entrance {{ fill: #ff9800; stroke: #e65100; stroke-width: 2; }}
-    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#333"/></marker>
   </defs>
   
-  <text x="{margin}" y="25" class="title">План {floors} этажа</text>'''
+  <!-- Title -->
+  <text x="{MARGIN}" y="30" font-family="Arial" font-size="18" font-weight="bold" fill="#333">ПЛАН {floors}-го ЭТАЖА</text>
+  <text x="{MARGIN}" y="50" font-family="Arial" font-size="12" fill="#666">{plan.get("description", "Архитектурный план")}</text>
+  <text x="{MARGIN}" y="64" font-family="Arial" font-size="10" fill="#999">Масштаб 1:100</text>
+  
+  <!-- Axes -->
+  <line x1="{MARGIN}" y1="{MARGIN + TITLE_H - 15}" x2="{MARGIN}" y2="{MARGIN + TITLE_H + bldg_d * SCALE + 15}" stroke="#e53935" stroke-width="0.8" stroke-dasharray="8,4"/>
+  <line x1="{MARGIN + bldg_w * SCALE}" y1="{MARGIN + TITLE_H - 15}" x2="{MARGIN + bldg_w * SCALE}" y2="{MARGIN + TITLE_H + bldg_d * SCALE + 15}" stroke="#e53935" stroke-width="0.8" stroke-dasharray="8,4"/>
+  <line x1="{MARGIN - 15}" y1="{MARGIN + TITLE_H}" x2="{MARGIN + bldg_w * SCALE + 15}" y2="{MARGIN + TITLE_H}" stroke="#e53935" stroke-width="0.8" stroke-dasharray="8,4"/>
+  <line x1="{MARGIN - 15}" y1="{MARGIN + TITLE_H + bldg_d * SCALE}" x2="{MARGIN + bldg_w * SCALE + 15}" y2="{MARGIN + TITLE_H + bldg_d * SCALE}" stroke="#e53935" stroke-width="0.8" stroke-dasharray="8,4"/>
+  
+  <!-- Axis labels -->
+  <circle cx="{MARGIN}" cy="{MARGIN + TITLE_H - 20}" r="8" fill="none" stroke="#e53935" stroke-width="1"/><text x="{MARGIN}" y="{MARGIN + TITLE_H - 16}" font-family="Arial" font-size="8" fill="#e53935" text-anchor="middle">А</text>
+  <circle cx="{MARGIN + bldg_w * SCALE}" cy="{MARGIN + TITLE_H - 20}" r="8" fill="none" stroke="#e53935" stroke-width="1"/><text x="{MARGIN + bldg_w * SCALE}" y="{MARGIN + TITLE_H - 16}" font-family="Arial" font-size="8" fill="#e53935" text-anchor="middle">Б</text>
+  <circle cx="{MARGIN - 22}" cy="{MARGIN + TITLE_H}" r="8" fill="none" stroke="#e53935" stroke-width="1"/><text x="{MARGIN - 22}" y="{MARGIN + TITLE_H + 3}" font-family="Arial" font-size="8" fill="#e53935" text-anchor="middle">1</text>
+  <circle cx="{MARGIN - 22}" cy="{MARGIN + TITLE_H + bldg_d * SCALE}" r="8" fill="none" stroke="#e53935" stroke-width="1"/><text x="{MARGIN - 22}" y="{MARGIN + TITLE_H + bldg_d * SCALE + 3}" font-family="Arial" font-size="8" fill="#e53935" text-anchor="middle">2</text>'''
     
+    # Rooms
+    total_area = 0
     for room in rooms:
-        rx = margin + room["x"] * scale
-        ry = margin + 20 + room["y"] * scale
-        rw = room["width"] * scale
-        rd = room["depth"] * scale
+        rx = MARGIN + room["x"] * SCALE
+        ry = MARGIN + TITLE_H + (bldg_d - room["y"] - room["depth"]) * SCALE
+        rw = room["width"] * SCALE
+        rd = room["depth"] * SCALE
         area = room["width"] * room["depth"]
+        total_area += area
         svg += f'''
-  <rect x="{rx}" y="{ry}" width="{rw}" height="{rd}" class="room" stroke="#333" stroke-width="2"/>
-  <text x="{rx + rw/2}" y="{ry + rd/2 - 5}" class="room-label">{room["name"]}</text>
-  <text x="{rx + rw/2}" y="{ry + rd/2 + 12}" class="room-area">{area:.1f} м²</text>'''
+  <rect x="{rx}" y="{ry}" width="{rw}" height="{rd}" fill="#fafafa" stroke="#333" stroke-width="2"/>
+  <text x="{rx + rw/2}" y="{ry + rd/2 - 8}" font-family="Arial" font-size="12" font-weight="bold" fill="#333" text-anchor="middle">{room["name"]}</text>
+  <text x="{rx + rw/2}" y="{ry + rd/2 + 8}" font-family="Arial" font-size="10" fill="#888" text-anchor="middle">{area:.1f} м²</text>'''
     
     # Entrance
-    entrance = building.get("entrance", {})
-    if entrance:
-        ex = margin + entrance.get("x", bldg_w/2) * scale - 10
-        ey = margin + 20 + entrance.get("y", 0) * scale - 5
-        svg += f'''
-  <rect x="{ex}" y="{ey}" width="20" height="10" class="entrance" rx="2"/>'''
+    svg += f'''
+  <rect x="{MARGIN + bldg_w * SCALE / 2 - 12}" y="{MARGIN + TITLE_H + bldg_d * SCALE - 4}" width="24" height="8" fill="#ff9800" stroke="#e65100" stroke-width="1.5" rx="1"/>
+  <text x="{MARGIN + bldg_w * SCALE / 2}" y="{MARGIN + TITLE_H + bldg_d * SCALE + 18}" font-family="Arial" font-size="10" font-weight="bold" fill="#e65100" text-anchor="middle">ВХОД</text>'''
     
     # Dimensions
     svg += f'''
-  <text x="{margin + bldg_w * scale / 2}" y="{margin + 20 + bldg_d * scale + 20}" class="dim" text-anchor="middle">{bldg_w} м</text>
-  <text x="{margin - 10}" y="{margin + 20 + bldg_d * scale / 2}" class="dim" text-anchor="middle" transform="rotate(-90,{margin - 10},{margin + 20 + bldg_d * scale / 2})">{bldg_d} м</text>
+  <line x1="{MARGIN}" y1="{MARGIN + TITLE_H + bldg_d * SCALE + 30}" x2="{MARGIN + bldg_w * SCALE}" y2="{MARGIN + TITLE_H + bldg_d * SCALE + 30}" stroke="#1a73e8" stroke-width="1" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="{MARGIN + bldg_w * SCALE / 2}" y="{MARGIN + TITLE_H + bldg_d * SCALE + 44}" font-family="Arial" font-size="12" fill="#1a73e8" text-anchor="middle">{bldg_w} м</text>
+  <line x1="{MARGIN - 30}" y1="{MARGIN + TITLE_H}" x2="{MARGIN - 30}" y2="{MARGIN + TITLE_H + bldg_d * SCALE}" stroke="#1a73e8" stroke-width="1" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="{MARGIN - 40}" y="{MARGIN + TITLE_H + bldg_d * SCALE / 2}" font-family="Arial" font-size="12" fill="#1a73e8" text-anchor="middle" transform="rotate(-90,{MARGIN - 40},{MARGIN + TITLE_H + bldg_d * SCALE / 2})">{bldg_d} м</text>'''
+    
+    # Room schedule (экспликация)
+    table_y = MARGIN + TITLE_H + bldg_d * SCALE + 60
+    svg += f'''
+  <!-- Экспликация помещений -->
+  <text x="{MARGIN}" y="{table_y}" font-family="Arial" font-size="13" font-weight="bold" fill="#333">ЭКСПЛИКАЦИЯ ПОМЕЩЕНИЙ</text>
+  <rect x="{MARGIN}" y="{table_y + 5}" width="{bldg_w * SCALE}" height="{25 + len(rooms) * 18}" fill="none" stroke="#333" stroke-width="1"/>
+  <rect x="{MARGIN}" y="{table_y + 5}" width="{bldg_w * SCALE}" height="18" fill="#e0e0e0"/>
+  <text x="{MARGIN + 10}" y="{table_y + 17}" font-family="Arial" font-size="9" font-weight="bold" fill="#333">№</text>
+  <text x="{MARGIN + 30}" y="{table_y + 17}" font-family="Arial" font-size="9" font-weight="bold" fill="#333">Наименование</text>
+  <text x="{MARGIN + bldg_w * SCALE - 80}" y="{table_y + 17}" font-family="Arial" font-size="9" font-weight="bold" fill="#333">Площадь, м²</text>'''
+    
+    for i, room in enumerate(rooms):
+        y = table_y + 25 + i * 18
+        area = room["width"] * room["depth"]
+        bg = "#fff" if i % 2 == 0 else "#f5f5f5"
+        svg += f'''
+  <rect x="{MARGIN}" y="{y}" width="{bldg_w * SCALE}" height="17" fill="{bg}"/>
+  <text x="{MARGIN + 15}" y="{y + 12}" font-family="Arial" font-size="9" fill="#333">{i+1}</text>
+  <text x="{MARGIN + 30}" y="{y + 12}" font-family="Arial" font-size="9" fill="#333">{room["name"]}</text>
+  <text x="{MARGIN + bldg_w * SCALE - 80}" y="{y + 12}" font-family="Arial" font-size="9" fill="#333">{area:.1f}</text>'''
+    
+    # Total
+    svg += f'''
+  <rect x="{MARGIN}" y="{table_y + 25 + len(rooms) * 18}" width="{bldg_w * SCALE}" height="18" fill="#e0e0e0"/>
+  <text x="{MARGIN + 30}" y="{table_y + 25 + len(rooms) * 18 + 12}" font-family="Arial" font-size="9" font-weight="bold" fill="#333">ИТОГО</text>
+  <text x="{MARGIN + bldg_w * SCALE - 80}" y="{table_y + 25 + len(rooms) * 18 + 12}" font-family="Arial" font-size="9" font-weight="bold" fill="#333">{total_area:.1f}</text>'''
+    
+    # Stamp
+    stamp_y = svg_h - STAMP_H
+    svg += f'''
+  <!-- Stamp -->
+  <rect x="{MARGIN}" y="{stamp_y}" width="{bldg_w * SCALE}" height="{STAMP_H}" fill="none" stroke="#333" stroke-width="1.5"/>
+  <line x1="{MARGIN}" y1="{stamp_y + 20}" x2="{MARGIN + bldg_w * SCALE}" y2="{stamp_y + 20}" stroke="#333" stroke-width="1"/>
+  <line x1="{MARGIN + bldg_w * SCALE * 0.6}" y1="{stamp_y}" x2="{MARGIN + bldg_w * SCALE * 0.6}" y2="{stamp_y + STAMP_H}" stroke="#333" stroke-width="1"/>
+  <text x="{MARGIN + 5}" y="{stamp_y + 14}" font-family="Arial" font-size="9" fill="#333">План {floors}-го этажа</text>
+  <text x="{MARGIN + bldg_w * SCALE * 0.6 + 5}" y="{stamp_y + 14}" font-family="Arial" font-size="9" fill="#333">Масштаб 1:100</text>
+  <text x="{MARGIN + 5}" y="{stamp_y + 38}" font-family="Arial" font-size="8" fill="#666">{datetime.now().strftime("%d.%m.%Y")}</text>
+  <text x="{MARGIN + bldg_w * SCALE * 0.6 + 5}" y="{stamp_y + 38}" font-family="Arial" font-size="8" fill="#666">Archiq AI</text>
 </svg>'''
     
     return svg
 
-# ==================== SPECS GENERATOR ====================
+# ==================== SPECIFICATIONS ====================
 
 def generate_specs(plan: dict) -> dict:
-    """Generate project specifications."""
     building = plan.get("building", {})
     site = plan.get("site", {})
     rooms = building.get("rooms", [])
     
-    total_area = building.get("width", 0) * building.get("depth", 0)
-    living_area = sum(r.get("width", 0) * r.get("depth", 0) for r in rooms if "Спальня" in r.get("name", "") or "Гостиная" in r.get("name", ""))
+    total_area = sum(r.get("width", 0) * r.get("depth", 0) for r in rooms)
+    living_area = sum(r.get("width", 0) * r.get("depth", 0) for r in rooms if r.get("name") in ("Гостиная", "Спальня", "Детская", "Кабинет"))
+    wet_area = sum(r.get("width", 0) * r.get("depth", 0) for r in rooms if r.get("is_wet", False))
+    site_area = site.get("width", 1) * site.get("depth", 1)
     
-    specs = {
+    return {
         "total_area": round(total_area, 1),
         "living_area": round(living_area, 1),
+        "wet_area": round(wet_area, 1),
         "floors": building.get("floors", 1),
         "rooms_count": len(rooms),
         "building_dimensions": f"{building.get('width', 0)} x {building.get('depth', 0)} м",
         "site_dimensions": f"{site.get('width', 0)} x {site.get('depth', 0)} м",
         "building_footprint": round(total_area, 1),
-        "site_coverage": round(total_area / (site.get('width', 1) * site.get('depth', 1)) * 100, 1),
-        "compliance": plan.get("compliance", []),
+        "site_area": round(site_area, 1),
+        "site_coverage": round(total_area / site_area * 100, 1),
+        "perimeter": round(2 * (building.get('width', 0) + building.get('depth', 0)), 1),
+        "compliance": check_snip_rooms(rooms),
         "description": plan.get("description", "")
     }
+
+def check_snip_rooms(rooms: List[Dict]) -> List[str]:
+    results = []
+    for r in rooms:
+        area = r.get("width", 0) * r.get("depth", 0)
+        name = r.get("name", "")
+        if "Спальня" in name or "Детская" in name:
+            if area >= 8:
+                results.append(f"✅ {name}: {area:.1f} м² ≥ 8 м² (СНиП 2.08.01-89)")
+            else:
+                results.append(f"⚠️ {name}: {area:.1f} м² < 8 м²")
+        elif name == "Гостиная":
+            if area >= 16:
+                results.append(f"✅ {name}: {area:.1f} м² ≥ 16 м²")
+            else:
+                results.append(f"⚠️ {name}: {area:.1f} м² < 16 м²")
+        elif name == "Кухня":
+            if area >= 6:
+                results.append(f"✅ {name}: {area:.1f} м² ≥ 6 м²")
+            else:
+                results.append(f"⚠️ {name}: {area:.1f} м² < 6 м²")
+        else:
+            results.append(f"✅ {name}: {area:.1f} м²")
+    return results
+
+# ==================== AI GENERATION ====================
+
+def generate_plan_ai(project: dict) -> dict:
+    """Generate plan using Gemini AI if available, else fallback."""
+    if GEMINI_AVAILABLE and GEMINI_API_KEY:
+        try:
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            prompt = f"""Ты — профессиональный архитектор. Сгенерируй план здания.
+
+Параметры: тип={project.get('building_type','дом')}, площадь={project.get('area',100)}м², этажей={project.get('floors',1)}, комнат={project.get('rooms',3)}, участок={project.get('site_width',20)}x{project.get('site_depth',30)}м, требования: {project.get('requirements','стандарт')}
+
+Ответь ТОЛЬКО JSON:
+{{"building":{{"width":X,"depth":Y,"floors":Z,"rooms":[{{"name":"Имя","width":W,"depth":D,"x":X,"y":Y,"is_wet":true/false}}],"entrance":{{"x":X,"y":Y}}}},"site":{{"width":W,"depth":D,"building_x":X,"building_y":Y,"parking":true,"garden":true}},"description":"описание"}}"""
+            response = model.generate_content(prompt)
+            text = response.text
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                plan = json.loads(json_match.group())
+                # Ensure required fields
+                for room in plan.get("building", {}).get("rooms", []):
+                    room.setdefault("is_wet", False)
+                return plan
+        except Exception as e:
+            print(f"AI error: {e}")
     
-    return specs
+    return generate_plan_fallback(project)
+
+def generate_plan_fallback(project: dict) -> dict:
+    """Generate plan algorithmically."""
+    area = project.get('area', 100)
+    floors = project.get('floors', 1)
+    rooms_count = project.get('rooms', 3)
+    site_w = project.get('site_width', 20)
+    site_d = project.get('site_depth', 30)
+    bldg_type = project.get('building_type', 'жилой дом')
+    
+    floor_area = area / floors
+    bldg_w = math.sqrt(floor_area) * 1.3
+    bldg_d = floor_area / bldg_w
+    bldg_w = round(bldg_w, 1)
+    bldg_d = round(bldg_d, 1)
+    
+    rooms = determine_rooms(bldg_type, floor_area, rooms_count)
+    placed = pack_rooms(rooms, bldg_w, bldg_d)
+    
+    # Convert to dicts
+    rooms_dict = []
+    for r in placed:
+        rooms_dict.append({
+            "name": r.name,
+            "width": r.width,
+            "depth": r.depth,
+            "x": round(r.x, 1),
+            "y": round(r.y, 1),
+            "is_wet": r.is_wet,
+            "has_window": r.has_window
+        })
+    
+    return {
+        "building": {
+            "width": bldg_w,
+            "depth": bldg_d,
+            "floors": floors,
+            "rooms": rooms_dict,
+            "entrance": {"x": round(bldg_w / 2, 1), "y": 0}
+        },
+        "site": {
+            "width": site_w,
+            "depth": site_d,
+            "building_x": round((site_w - bldg_w) / 3, 1),
+            "building_y": round((site_d - bldg_d) / 3, 1),
+            "parking": True,
+            "garden": True,
+            "driveway": True
+        },
+        "description": f"{bldg_type}, {area} м², {floors} эт., {len(placed)} пом."
+    }
 
 # ==================== APP ====================
 
 app = FastAPI(title="Archiq AI", description="Генератор архитектурных планов")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- Landing Page ---
-LANDING_PAGE = """<!DOCTYPE html>
+LANDING = """<!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Archiq AI — Генератор архитектурных планов</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}
-.container{max-width:700px;width:100%;text-align:center}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+.container{max-width:600px;text-align:center}
 .logo{font-size:3rem;font-weight:800;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
-.subtitle{font-size:1.1rem;color:#94a3b8;margin-bottom:2rem}
+.sub{color:#94a3b8;margin-bottom:2rem}
 .status{display:inline-flex;align-items:center;gap:.5rem;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:.5rem 1rem;border-radius:999px;margin-bottom:2rem}
 .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .endpoints{text-align:left;background:rgba(30,41,59,.8);border:1px solid #334155;border-radius:12px;padding:1.5rem}
 .endpoints h2{font-size:1rem;color:#94a3b8;margin-bottom:1rem;text-transform:uppercase;letter-spacing:.05em}
-.ep{display:flex;gap:1rem;padding:.75rem 0;border-bottom:1px solid #1e293b;align-items:baseline}
+.ep{display:flex;gap:1rem;padding:.6rem 0;border-bottom:1px solid #1e293b}
 .ep:last-child{border-bottom:none}
-.method{font-family:monospace;font-size:.85rem;font-weight:700;min-width:65px;padding:.2rem .5rem;border-radius:4px;text-align:center}
+.method{font-family:monospace;font-size:.8rem;font-weight:700;min-width:55px;padding:.15rem .4rem;border-radius:4px;text-align:center}
 .get{background:rgba(56,189,248,.15);color:#38bdf8}
 .post{background:rgba(168,85,247,.15);color:#a855f7}
-.path{font-family:monospace;font-size:.9rem;color:#e2e8f0}
-.desc{color:#64748b;font-size:.85rem;margin-left:auto}
-.footer{margin-top:2rem;color:#475569;font-size:.8rem}
-.footer a{color:#818cf8;text-decoration:none}
+.path{font-family:monospace;font-size:.85rem;color:#e2e8f0}
+.desc{color:#64748b;font-size:.8rem;margin-left:auto}
+.ft{margin-top:2rem;color:#475569;font-size:.8rem}
+.ft a{color:#818cf8;text-decoration:none}
 </style></head>
 <body><div class="container">
 <div class="logo">🏗️ Archiq AI</div>
-<div class="subtitle">Генератор профессиональных архитектурных планов</div>
+<div class="sub">Генератор профессиональных архитектурных планов</div>
 <div class="status"><span class="dot"></span> Сервис работает</div>
-<div class="endpoints"><h2>API Endpoints</h2>
+<div class="endpoints"><h2>API</h2>
 <div class="ep"><span class="method get">GET</span><span class="path">/health</span><span class="desc">Статус</span></div>
-<div class="ep"><span class="method post">POST</span><span class="path">/generate-plan</span><span class="desc">Сгенерировать план</span></div>
+<div class="ep"><span class="method post">POST</span><span class="path">/generate-plan</span><span class="desc">Генерация плана</span></div>
 <div class="ep"><span class="method post">POST</span><span class="path">/analyze-site-plan</span><span class="desc">Анализ плана участка</span></div>
-<div class="ep"><span class="method get">GET</span><span class="path">/site-plan-svg?project_id=...</span><span class="desc">SVG план участка</span></div>
-<div class="ep"><span class="method get">GET</span><span class="path">/floor-plan-svg?project_id=...</span><span class="desc">SVG поэтажный план</span></div>
-<div class="ep"><span class="method get">GET</span><span class="path">/specs?project_id=...</span><span class="desc">Спецификация</span></div>
-<div class="ep"><span class="method get">GET</span><span class="path">/projects</span><span class="desc">Список проектов</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/site-plan-svg?id=...</span><span class="desc">SVG план участка</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/floor-plan-svg?id=...</span><span class="desc">SVG поэтажный план</span></div>
+<div class="ep"><span class="method get">GET</span><span class="path">/specs?id=...</span><span class="desc">Спецификация</span></div>
 </div>
-<div class="footer"><p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p></div>
+<div class="ft"><p>GitHub: <a href="https://github.com/K09-0/ARCHIQ-AI" target="_blank">K09-0/ARCHIQ-AI</a></p></div>
 </div></body></html>"""
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY, name TEXT, building_type TEXT, area REAL,
+        floors INTEGER, rooms INTEGER, site_width REAL, site_depth REAL,
+        requirements TEXT, plan_json TEXT, created_at TEXT)""")
+    conn.commit()
+    conn.close()
 
 @app.on_event("startup")
 def on_startup():
@@ -409,143 +704,80 @@ def on_startup():
 
 @app.get("/", response_class=HTMLResponse)
 def root():
-    return LANDING_PAGE
+    return LANDING
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok", "gemini_configured": bool(GEMINI_API_KEY), "hf_configured": bool(HF_API_KEY), "service": "Archiq AI — Генератор архитектурных планов"}
 
-# --- Database ---
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        building_type TEXT,
-        area REAL,
-        floors INTEGER,
-        rooms INTEGER,
-        site_width REAL,
-        site_depth REAL,
-        requirements TEXT,
-        plan_json TEXT,
-        created_at TEXT
-    )""")
-    conn.commit()
-    conn.close()
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-# --- Project generation ---
 @app.post("/generate-plan")
-def generate_project(
-    name: str = Form("Новый проект"),
-    building_type: str = Form("жилой дом"),
-    area: float = Form(100),
-    floors: int = Form(1),
-    rooms: int = Form(3),
-    site_width: float = Form(20),
-    site_depth: float = Form(30),
-    requirements: str = Form(""),
-    site_plan: UploadFile = File(None)
-):
-    project = {
-        "name": name,
-        "building_type": building_type,
-        "area": area,
-        "floors": floors,
-        "rooms": rooms,
-        "site_width": site_width,
-        "site_depth": site_depth,
-        "requirements": requirements
-    }
+def generate(name: str = Form("Новый проект"), building_type: str = Form("жилой дом"),
+             area: float = Form(100), floors: int = Form(1), rooms: int = Form(3),
+             site_width: float = Form(20), site_depth: float = Form(30),
+             requirements: str = Form("")):
+    project = {"name": name, "building_type": building_type, "area": area, "floors": floors,
+               "rooms": rooms, "site_width": site_width, "site_depth": site_depth, "requirements": requirements}
     
-    # If site plan uploaded, try to extract data
-    if site_plan:
-        project["site_plan_uploaded"] = True
-    
-    plan = generate_plan(project)
+    plan = generate_plan_ai(project)
     specs = generate_specs(plan)
     project_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Save plan SVGs
-    site_svg = generate_site_plan_svg(plan)
-    floor_svg = generate_floor_plan_svg(plan)
-    (OUTPUT_DIR / f"{project_id}_site.svg").write_text(site_svg)
-    (OUTPUT_DIR / f"{project_id}_floor.svg").write_text(floor_svg)
+    (OUTPUT_DIR / f"{project_id}_site.svg").write_text(generate_professional_site_svg(plan))
+    (OUTPUT_DIR / f"{project_id}_floor.svg").write_text(generate_professional_floor_svg(plan))
     
-    # Save to DB
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO projects (id, name, building_type, area, floors, rooms, site_width, site_depth, requirements, plan_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (project_id, name, building_type, area, floors, rooms, site_width, site_depth, requirements, json.dumps(plan), datetime.now().isoformat())
-    )
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT INTO projects VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (project_id, name, building_type, area, floors, rooms, site_width, site_depth,
+         requirements, json.dumps(plan), datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
-    return {
-        "project_id": project_id,
-        "plan": plan,
-        "specs": specs,
-        "site_plan_url": f"/site-plan-svg?project_id={project_id}",
-        "floor_plan_url": f"/floor-plan-svg?project_id={project_id}"
-    }
+    return {"project_id": project_id, "plan": plan, "specs": specs}
 
 @app.get("/site-plan-svg")
-def get_site_plan_svg(project_id: str):
+def get_site(project_id: str):
     path = OUTPUT_DIR / f"{project_id}_site.svg"
     if path.exists():
         return HTMLResponse(content=path.read_text())
-    return JSONResponse({"error": "Plan not found"}, status_code=404)
+    return JSONResponse({"error": "Not found"}, status_code=404)
 
 @app.get("/floor-plan-svg")
-def get_floor_plan_svg(project_id: str):
+def get_floor(project_id: str):
     path = OUTPUT_DIR / f"{project_id}_floor.svg"
     if path.exists():
         return HTMLResponse(content=path.read_text())
-    return JSONResponse({"error": "Plan not found"}, status_code=404)
+    return JSONResponse({"error": "Not found"}, status_code=404)
 
 @app.get("/specs")
-def get_specs_endpoint(project_id: str):
-    conn = get_db()
-    row = conn.execute("SELECT plan_json FROM projects WHERE id = ?", (project_id,)).fetchone()
+def get_specs(project_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT plan_json FROM projects WHERE id=?", (project_id,)).fetchone()
     conn.close()
     if row:
-        plan = json.loads(row["plan_json"])
-        return generate_specs(plan)
-    return JSONResponse({"error": "Project not found"}, status_code=404)
+        return generate_specs(json.loads(row[0]))
+    return JSONResponse({"error": "Not found"}, status_code=404)
 
 @app.get("/projects")
 def list_projects():
-    conn = get_db()
-    rows = conn.execute("SELECT id, name, building_type, area, floors, rooms, created_at FROM projects ORDER BY created_at DESC").fetchall()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT id,name,building_type,area,floors,rooms,created_at FROM projects ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 @app.post("/analyze-site-plan")
-async def analyze_site_plan(file: UploadFile = File(...)):
-    """Analyze uploaded site plan image."""
-    content = await file.read()
-    if not GEMINI_API_KEY or not GEMINI_AVAILABLE:
-        return {"error": "Gemini API key not configured. Site plan analysis requires Gemini.", "gemini_configured": False}
-    
+async def analyze_site(file: UploadFile = File(...)):
+    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
+        return {"error": "Gemini not configured"}
     try:
-        import base64
-        img_base64 = base64.b64encode(content).decode()
-        
+        content = await file.read()
+        img_b64 = base64.b64encode(content).decode()
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([
-            "Ты — архитектор-эксперт. Проанализируй план участка и определи: размеры участка, расположение зданий, подъездные пути, зоны озеленения. Ответь JSON: {\"site_width\": X, \"site_depth\": Y, \"buildings\": [{\"x\": X, \"y\": Y, \"width\": W, \"depth\": D}], \"features\": []}. Если не можешь определить точные размеры — дай оценку.",
-            {"mime_type": "image/jpeg", "data": img_base64}
+        resp = model.generate_content([
+            "Архитектор: проанализируй план участка. Ответь JSON: {\"site_width\":X,\"site_depth\":Y,\"features\":[]}",
+            {"mime_type": "image/jpeg", "data": img_b64}
         ])
-        
-        text = response.text
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            return json.loads(json_match.group())
-        return {"analysis": text}
+        m = re.search(r'\{[\s\S]*\}', resp.text)
+        return json.loads(m.group()) if m else {"analysis": resp.text}
     except Exception as e:
         return {"error": str(e)}
