@@ -704,6 +704,27 @@ async def generate_from_site(
 
 # ==================== ЭТАП 4: AI-АРХИТЕКТОР ====================
 
+@app.get("/ai-test")
+def ai_test():
+    """Test endpoint to verify ai_architect module loads."""
+    try:
+        from ai_architect import (
+            ai_architect_v2, check_snip, generate_project_description,
+            ai_architect_generate_description, SnipCheckResult, ArchitectResponse
+        )
+        # Test SNiP check without Gemini
+        bldg = {"width": 10, "depth": 8, "floors": 1}
+        rooms = [
+            {"name": "Спальня", "w": 3.5, "d": 3.0, "x": 0, "y": 0},
+            {"name": "Гостиная", "w": 5.0, "d": 4.0, "x": 0, "y": 3},
+            {"name": "Кухня", "w": 3.0, "d": 3.0, "x": 0, "y": 7},
+        ]
+        snip = check_snip(bldg, rooms)
+        return {"modules": "OK", "snip_check": snip.to_dict()}
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()[:1000]}
+
 @app.post("/ai-architect")
 async def ai_architect_endpoint(
     bt: str = Form("жилой дом"),
