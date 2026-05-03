@@ -715,17 +715,13 @@ async def ai_architect_endpoint(
     req: str = Form(""),
     model: str = Form("gemini-2.0-flash"),
 ):
-    """Этап 4: AI-архитектор — Gemini генерирует оптимальную планировку.
-    
-    - Генерация планировки с учётом СНиП
-    - Автоматическая проверка СНиП
-    - Текстовое описание проекта
-    - Учёт участка и дополнительных требований
-    """
+    """Этап 4: AI-архитектор — Gemini генерирует оптимальную планировку."""
     if not GEMINI_API_KEY:
         return JSONResponse({"error": "GEMINI_API_KEY not configured"}, status_code=400)
     
     try:
+        import sys
+        print(f"DEBUG: Calling ai_architect_v2 with bt={bt}, area={area}, model={model}", flush=True)
         result = ai_architect_v2(
             building_type=bt,
             area=area,
@@ -737,9 +733,11 @@ async def ai_architect_endpoint(
             gemini_api_key=GEMINI_API_KEY,
             model_name=model,
         )
+        print(f"DEBUG: result.success={result.success}, error={result.error}", flush=True)
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
+        print(f"EXCEPTION: {e}\n{tb}", flush=True)
         return JSONResponse({"error": str(e), "traceback": tb[:1000]}, status_code=500)
     
     if not result.success:
