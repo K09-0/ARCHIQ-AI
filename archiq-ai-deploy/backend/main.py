@@ -704,6 +704,10 @@ async def generate_from_site(
 
 # ==================== ЭТАП 4: AI-АРХИТЕКТОР ====================
 
+@app.get("/ai-test2")
+def ai_test2():
+    return {"version": "v6-ai-test2", "status": "ok"}
+
 @app.get("/ai-test")
 def ai_test():
     """Test endpoint to verify ai_architect module loads."""
