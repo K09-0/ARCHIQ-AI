@@ -2,85 +2,92 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Archiq AI</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
-        .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; text-align: center; border-bottom: 1px solid #333; }
-        .header h1 { color: #4fc3f7; font-size: 1.8em; }
-        .header p { color: #888; margin-top: 5px; }
-        .nav { display: flex; background: #1a1a2e; border-bottom: 1px solid #333; overflow-x: auto; }
-        .nav-btn { flex: 1; padding: 12px 8px; text-align: center; color: #888; cursor: pointer; font-size: 13px; border: none; background: none; white-space: nowrap; }
-        .nav-btn.active { color: #4fc3f7; border-bottom: 2px solid #4fc3f7; }
-        .content { padding: 16px; max-width: 600px; margin: 0 auto; }
-        .panel { display: none; }
-        .panel.active { display: block; }
-        .card { background: #1a1a2e; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #333; }
-        .card h3 { color: #4fc3f7; margin-bottom: 12px; }
-        input[type="text"], textarea { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #0a0a0f; color: #e0e0e0; font-size: 14px; margin-bottom: 10px; }
-        textarea { min-height: 80px; resize: vertical; }
-        button { background: #4fc3f7; color: #0a0a0f; border: none; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; }
-        button:active { opacity: 0.8; }
-        button:disabled { opacity: 0.5; cursor: wait; }
-        .result { background: #0a0a0f; border-radius: 8px; padding: 12px; margin-top: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; border: 1px solid #222; }
-        .norm-item { padding: 10px; border-bottom: 1px solid #222; }
-        .norm-item:last-child { border: none; }
-        .norm-item strong { color: #4fc3f7; }
-        .status { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-        .status-tag { padding: 4px 10px; border-radius: 20px; font-size: 12px; }
-        .status-ok { background: #1b5e20; color: #81c784; }
-        .status-off { background: #b71c1c; color: #ef9a9a; }
-        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #0a0a0f; color: #e0e0e0; font-size: 14px; margin-bottom: 10px; }
-        .loading { text-align: center; padding: 20px; color: #4fc3f7; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding-bottom: 70px; }
+        .header { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 16px; text-align: center; border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 100; }
+        .header h1 { font-size: 22px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header p { color: #64748b; font-size: 12px; margin-top: 2px; }
+        .tabs { display: flex; background: #1e293b; border-bottom: 1px solid #334155; position: sticky; top: 60px; z-index: 99; overflow-x: auto; }
+        .tab { flex: 1; min-width: 80px; padding: 12px 8px; text-align: center; font-size: 13px; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+        .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+        .content { padding: 16px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #334155; }
+        .card h3 { font-size: 15px; color: #f8fafc; margin-bottom: 10px; }
+        input[type="text"], textarea, select { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 14px; margin-bottom: 10px; }
+        textarea { min-height: 100px; resize: vertical; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #38bdf8; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: linear-gradient(135deg, #38bdf8, #818cf8); color: #0f172a; }
+        .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result { background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border-left: 3px solid #38bdf8; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.6; }
+        .result img { max-width: 100%; border-radius: 8px; margin-top: 8px; }
+        .norm-item { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #818cf8; }
+        .norm-item strong { color: #38bdf8; font-size: 13px; }
+        .norm-item p { color: #94a3b8; font-size: 13px; margin-top: 4px; }
+        .loading { text-align: center; padding: 20px; color: #64748b; }
+        .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .status-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .status-item { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+        .status-ok { background: rgba(34,197,94,0.1); color: #22c55e; }
+        .status-off { background: rgba(239,68,68,0.1); color: #ef4444; }
+        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200; }
+        .toast.show { opacity: 1; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🏗️ Archiq AI</h1>
-        <p>Строительные нормы Казахстана</p>
+        <p>Строительные нормы РК</p>
     </div>
-    <div class="nav">
-        <button class="nav-btn active" onclick="showTab('ask')">💬 Вопрос</button>
-        <button class="nav-btn" onclick="showTab('norms')">📚 Нормы</button>
-        <button class="nav-btn" onclick="showTab('ocr')">📷 OCR</button>
-        <button class="nav-btn" onclick="showTab('viz')">🎨 Визуал</button>
+    <div class="tabs">
+        <div class="tab active" data-tab="ask"><span class="tab-icon">💬</span>Вопрос</div>
+        <div class="tab" data-tab="norms"><span class="tab-icon">📚</span>Нормы</div>
+        <div class="tab" data-tab="ocr"><span class="tab-icon">📷</span>OCR</div>
+        <div class="tab" data-tab="viz"><span class="tab-icon">🎨</span>Визуал</div>
     </div>
     <div class="content">
-        <div id="status-bar" class="status"></div>
-        
-        <div id="ask" class="panel active">
+        <div id="status-bar" class="status-bar"></div>
+        <div class="tab-content active" id="tab-ask">
             <div class="card">
-                <h3>💬 Спросить AI</h3>
-                <textarea id="ask-question" placeholder="Например: какая минимальная ширина лестницы?"></textarea>
-                <label><input type="checkbox" id="use-norms" checked> Использовать базу норм</label><br><br>
-                <button onclick="askAI()" id="ask-btn">Отправить</button>
+                <h3>💬 Задай вопрос по СНиП</h3>
+                <textarea id="ask-input" placeholder="Например: Какая минимальная ширина лестницы в жилом доме?"></textarea>
+                <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#94a3b8;">
+                    <input type="checkbox" id="ask-norms" checked> Искать в базе норм
+                </label>
+                <button class="btn btn-primary" id="ask-btn" onclick="askAI()">Спросить</button>
                 <div id="ask-result"></div>
             </div>
         </div>
-        
-        <div id="norms" class="panel">
+        <div class="tab-content" id="tab-norms">
             <div class="card">
-                <h3>📚 Поиск норм</h3>
+                <h3>📚 Поиск нормативов</h3>
                 <input type="text" id="norms-search" placeholder="Поиск: лестница, пожар, фундамент...">
-                <button onclick="searchNorms()" id="norms-btn">Найти</button>
-                <div id="norms-result"></div>
+                <button class="btn btn-primary" onclick="searchNorms()">Найти</button>
             </div>
+            <div id="norms-list"></div>
         </div>
-        
-        <div id="ocr" class="panel">
+        <div class="tab-content" id="tab-ocr">
             <div class="card">
-                <h3>📷 Распознать текст</h3>
-                <input type="file" id="ocr-file" accept="image/*">
-                <button onclick="doOCR()" id="ocr-btn" style="margin-top:10px">Распознать</button>
+                <h3>📷 Распознавание текста</h3>
+                <input type="file" id="ocr-file" accept="image/*" style="margin-bottom:10px;">
+                <button class="btn btn-primary" onclick="doOCR()">Распознать</button>
                 <div id="ocr-result"></div>
             </div>
         </div>
-        
-        <div id="viz" class="panel">
+        <div class="tab-content" id="tab-viz">
             <div class="card">
                 <h3>🎨 Генерация визуализации</h3>
-                <input type="text" id="viz-prompt" placeholder="Опишите: двухэтажный дом в стиле хай-тек...">
+                <input type="text" id="viz-prompt" placeholder="Опишите: двухэтажный дом в стиле минимализм с панорамными окнами">
                 <select id="viz-style">
                     <option value="photorealistic">Фотореализм</option>
                     <option value="watercolor">Акварель</option>
@@ -91,134 +98,22 @@
                     <option value="neoclassic">Неоклассика</option>
                     <option value="scandinavian">Скандинавский</option>
                 </select>
-                <button onclick="generateViz()" id="viz-btn">Генерировать</button>
+                <button class="btn btn-primary" onclick="generateViz()">Сгенерировать</button>
                 <div id="viz-result"></div>
             </div>
         </div>
     </div>
-
+    <div class="toast" id="toast"></div>
     <script>
         const API = "https://archiq-ai-api.onrender.com";
-        
-        function showTab(id) {
-            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            event.target.classList.add('active');
-        }
-        
-        function setStatus(data) {
-            const bar = document.getElementById('status-bar');
-            const tags = [
-                { ok: data.gemini_configured, text: 'Gemini AI' },
-                { ok: data.hf_configured, text: 'HuggingFace OCR' },
-                { ok: data.sdsd_available, text: 'Stable Diffusion' }
-            ];
-            bar.innerHTML = tags.map(t => 
-                '<span class="status-tag ' + (t.ok ? 'status-ok' : 'status-off') + '">' + 
-                (t.ok ? '✅' : '❌') + ' ' + t.text + '</span>'
-            ).join('');
-        }
-        
-        async function askAI() {
-            const btn = document.getElementById('ask-btn');
-            const result = document.getElementById('ask-result');
-            btn.disabled = true;
-            btn.textContent = 'Загрузка...';
-            result.innerHTML = '<div class="loading">Думаю...</div>';
-            try {
-                const r = await fetch(API + '/ask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        question: document.getElementById('ask-question').value,
-                        use_norms: document.getElementById('use-norms').checked
-                    })
-                });
-                const d = await r.json();
-                result.innerHTML = '<div class="result">' + (d.answer || JSON.stringify(d)) + '</div>';
-            } catch(e) {
-                result.innerHTML = '<div class="result" style="color:#ef5350">Ошибка: ' + e.message + '</div>';
-            }
-            btn.disabled = false;
-            btn.textContent = 'Отправить';
-        }
-        
-        async function searchNorms() {
-            const btn = document.getElementById('norms-btn');
-            const result = document.getElementById('norms-result');
-            btn.disabled = true;
-            btn.textContent = 'Поиск...';
-            result.innerHTML = '<div class="loading">Ищу...</div>';
-            try {
-                const q = document.getElementById('norms-search').value;
-                const r = await fetch(API + '/norms?search=' + encodeURIComponent(q));
-                const d = await r.json();
-                if (d.length === 0) {
-                    result.innerHTML = '<div class="result">Ничего не найдено</div>';
-                } else {
-                    result.innerHTML = '<div class="result">' + d.map(n => 
-                        '<div class="norm-item"><strong>' + (n.code||'') + '</strong><br>' + (n.title||'') + '<br><small>' + (n.content||'').substring(0,200) + '</small></div>'
-                    ).join('') + '</div>';
-                }
-            } catch(e) {
-                result.innerHTML = '<div class="result" style="color:#ef5350">Ошибка: ' + e.message + '</div>';
-            }
-            btn.disabled = false;
-            btn.textContent = 'Найти';
-        }
-        
-        async function doOCR() {
-            const btn = document.getElementById('ocr-btn');
-            const result = document.getElementById('ocr-result');
-            const file = document.getElementById('ocr-file').files[0];
-            if (!file) { result.innerHTML = '<div class="result" style="color:#ef5350">Выберите файл</div>'; return; }
-            btn.disabled = true;
-            btn.textContent = 'Загрузка...';
-            result.innerHTML = '<div class="loading">Распознаю...</div>';
-            try {
-                const fd = new FormData();
-                fd.append('file', file);
-                const r = await fetch(API + '/ocr', { method: 'POST', body: fd });
-                const d = await r.json();
-                result.innerHTML = '<div class="result">' + (d.text || JSON.stringify(d)) + '</div>';
-            } catch(e) {
-                result.innerHTML = '<div class="result" style="color:#ef5350">Ошибка: ' + e.message + '</div>';
-            }
-            btn.disabled = false;
-            btn.textContent = 'Распознать';
-        }
-        
-        async function generateViz() {
-            const btn = document.getElementById('viz-btn');
-            const result = document.getElementById('viz-result');
-            btn.disabled = true;
-            btn.textContent = 'Генерация...';
-            result.innerHTML = '<div class="loading">Генерирую...</div>';
-            try {
-                const r = await fetch(API + '/generate-visualization', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        prompt: document.getElementById('viz-prompt').value,
-                        style: document.getElementById('viz-style').value
-                    })
-                });
-                const d = await r.json();
-                let html = '<div class="result">';
-                if (d.image_url) html += '<img src="' + d.image_url + '" style="max-width:100%">';
-                if (d.description) html += '<p>' + d.description + '</p>';
-                html += '<p>Метод: ' + (d.method || 'N/A') + '</p></div>';
-                result.innerHTML = html;
-            } catch(e) {
-                result.innerHTML = '<div class="result" style="color:#ef5350">Ошибка: ' + e.message + '</div>';
-            }
-            btn.disabled = false;
-            btn.textContent = 'Генерировать';
-        }
-        
-        // Load status
-        fetch(API + '/health').then(r => r.json()).then(setStatus);
+        function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+        function loading(id, show) { document.getElementById(id).innerHTML = show ? '<div class="loading"><div class="spinner"></div><br>Загрузка...</div>' : ''; }
+        document.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => { document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active')); tab.classList.add('active'); document.getElementById('tab-' + tab.dataset.tab).classList.add('active'); }); });
+        fetch(API + '/health').then(r => r.json()).then(d => { const bar = document.getElementById('status-bar'); bar.innerHTML = '<span class="status-item status-ok">✅ Сервер</span>' + (d.gemini_configured ? '<span class="status-item status-ok">✅ Gemini</span>' : '<span class="status-item status-off">⬜ Gemini</span>') + (d.hf_configured ? '<span class="status-item status-ok">✅ OCR</span>' : '<span class="status-item status-off">⬜ OCR</span>'); });
+        async function askAI() { const q = document.getElementById('ask-input').value.trim(); if (!q) return toast('Введите вопрос'); const useNorms = document.getElementById('ask-norms').checked; loading('ask-result', true); document.getElementById('ask-btn').disabled = true; try { const res = await fetch(API + '/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, use_norms: useNorms }) }); const data = await res.json(); document.getElementById('ask-result').innerHTML = '<div class="result">' + (data.answer || JSON.stringify(data)) + '</div>'; } catch(e) { document.getElementById('ask-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } document.getElementById('ask-btn').disabled = false; }
+        async function searchNorms() { const q = document.getElementById('norms-search').value.trim(); loading('norms-list', true); try { const url = API + '/norms' + (q ? '?search=' + encodeURIComponent(q) : ''); const res = await fetch(url); const data = await res.json(); if (!data.length) { document.getElementById('norms-list').innerHTML = '<div class="card" style="text-align:center;color:#64748b;">Ничего не найдено</div>'; return; } document.getElementById('norms-list').innerHTML = data.map(n => '<div class="norm-item"><strong>' + (n.code || '') + '</strong><p>' + (n.title || '') + '</p></div>').join(''); } catch(e) { document.getElementById('norms-list').innerHTML = '<div class="card" style="color:#ef4444;">❌ ' + e.message + '</div>'; } }
+        async function doOCR() { const file = document.getElementById('ocr-file').files[0]; if (!file) return toast('Выберите файл'); loading('ocr-result', true); try { const formData = new FormData(); formData.append('file', file); const res = await fetch(API + '/ocr', { method: 'POST', body: formData }); const data = await res.json(); document.getElementById('ocr-result').innerHTML = '<div class="result">' + (data.text || JSON.stringify(data)) + '</div>'; } catch(e) { document.getElementById('ocr-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } }
+        async function generateViz() { const prompt = document.getElementById('viz-prompt').value.trim(); if (!prompt) return toast('Опишите что сгенерировать'); const style = document.getElementById('viz-style').value; loading('viz-result', true); try { const res = await fetch(API + '/generate-visualization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, style }) }); const data = await res.json(); let html = '<div class="result">'; if (data.image_url) html += '<img src="' + data.image_url + '">'; if (data.description) html += '<p>' + data.description + '</p>'; html += '<p style="color:#64748b;font-size:12px;margin-top:8px;">Метод: ' + (data.method || '?') + '</p></div>'; document.getElementById('viz-result').innerHTML = html; } catch(e) { document.getElementById('viz-result').innerHTML = '<div class="result" style="border-color:#ef4444;">❌ ' + e.message + '</div>'; } }
     </script>
 </body>
 </html>
