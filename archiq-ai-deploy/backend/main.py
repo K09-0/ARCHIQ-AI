@@ -1704,13 +1704,8 @@ def ai_test2():
 
 @app.get("/ai-test")
 def ai_test():
-    """Test endpoint to verify ai_architect module loads."""
+    """Test SNiP check without Gemini."""
     try:
-        from ai_architect import (
-            ai_architect_v2, check_snip, generate_project_description,
-            ai_architect_generate_description, SnipCheckResult, ArchitectResponse
-        )
-        # Test SNiP check without Gemini
         bldg = {"width": 10, "depth": 8, "floors": 1}
         rooms = [
             {"name": "Спальня", "w": 3.5, "d": 3.0, "x": 0, "y": 0},
