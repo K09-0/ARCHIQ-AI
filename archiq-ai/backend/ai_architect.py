@@ -244,7 +244,7 @@ def ai_architect_v2(
     requirements: str = "",
     site_analysis: Optional[Dict] = None,
     gemini_api_key: str = "",
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-2.5-flash",
 ) -> ArchitectResponse:
     """AI-архитектор: Gemini генерирует оптимальную планировку.
     
@@ -592,7 +592,7 @@ def _build_architect_prompt(
 
 def ai_architect_generate_description(
     building: Dict, rooms: List[Dict], site: Dict,
-    gemini_api_key: str = "", model_name: str = "gemini-2.0-flash"
+    gemini_api_key: str = "", model_name: str = "gemini-2.5-flash"
 ) -> str:
     """Generate a rich architectural description using Gemini."""
     if not gemini_api_key:

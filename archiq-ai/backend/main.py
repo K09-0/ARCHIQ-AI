@@ -110,7 +110,7 @@ def analyze_site_plan(
     image_bytes: bytes,
     mime_type: str,
     gemini_api_key: str,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-2.5-flash",
 ) -> SiteAnalysisResult:
     """Анализ плана участка через Gemini Vision.
     
@@ -624,7 +624,7 @@ def ai_architect_v2(
     requirements: str = "",
     site_analysis: Optional[Dict] = None,
     gemini_api_key: str = "",
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-2.5-flash",
 ) -> ArchitectResponse:
     """AI-архитектор: Gemini генерирует оптимальную планировку.
     
@@ -972,7 +972,7 @@ def _build_architect_prompt(
 
 def ai_architect_generate_description(
     building: Dict, rooms: List[Dict], site: Dict,
-    gemini_api_key: str = "", model_name: str = "gemini-2.0-flash"
+    gemini_api_key: str = "", model_name: str = "gemini-2.5-flash"
 ) -> str:
     """Generate a rich architectural description using Gemini."""
     if not gemini_api_key:
@@ -1116,7 +1116,7 @@ def ai_architect(proj: dict) -> Optional[dict]:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""Архитектор: спроектируй планировку. Параметры: тип={proj['building_type']}, площадь={proj['area']}м², этажей={proj['floors']}, комнат={proj['rooms']}, участок={proj['site_width']}x{proj['site_depth']}м, требования: {proj.get('requirements','стандарт')}.
 
@@ -1590,7 +1590,7 @@ def list_p():
     return [dict(r) for r in rows]
 
 @app.post("/analyze-site")
-async def analyze_site(file:UploadFile=File(...), model:str=Form("gemini-2.0-flash")):
+async def analyze_site(file:UploadFile=File(...), model:str=Form("gemini-2.5-flash")):
     """Этап 3: AI-анализ плана участка через Gemini Vision.
     
     Загрузите изображение плана участка — получите:
@@ -1627,7 +1627,7 @@ async def generate_from_site(
     fl: int = Form(1),
     rooms: int = Form(3),
     req: str = Form(""),
-    model: str = Form("gemini-2.0-flash"),
+    model: str = Form("gemini-2.5-flash"),
 ):
     """Этап 3+4: Загрузить план участка → AI анализ → генерация планировки.
     
@@ -1727,7 +1727,7 @@ async def ai_architect_endpoint(
     sw: float = Form(20),
     sd: float = Form(30),
     req: str = Form(""),
-    model: str = Form("gemini-2.0-flash"),
+    model: str = Form("gemini-2.5-flash"),
 ):
     """Этап 4: AI-архитектор — Gemini генерирует оптимальную планировку."""
     if not GEMINI_API_KEY:
@@ -1788,7 +1788,7 @@ async def generate_ai(
     sw: float = Form(20),
     sd: float = Form(30),
     req: str = Form(""),
-    model: str = Form("gemini-2.0-flash"),
+    model: str = Form("gemini-2.5-flash"),
 ):
     """Этап 4: AI-генерация + все выходные файлы.
     

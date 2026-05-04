@@ -99,7 +99,7 @@ def analyze_site_plan(
     image_bytes: bytes,
     mime_type: str,
     gemini_api_key: str,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-2.5-flash",
 ) -> SiteAnalysisResult:
     """Анализ плана участка через Gemini Vision.
     
