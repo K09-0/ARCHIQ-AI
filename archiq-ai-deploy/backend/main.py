@@ -452,7 +452,7 @@ class SnipViolation:
 @dataclass
 class SnipCheckResult:
     """Результат проверки СНиП."""
-    passed: bool
+    passed: bool = True
     total_checks: int = 0
     violations: List[SnipViolation] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
